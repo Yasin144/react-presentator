@@ -99,6 +99,8 @@ const stageDuration = document.getElementById("stageDuration");
 const seekBackwardBtn = document.getElementById("seekBackwardBtn");
 const seekForwardBtn = document.getElementById("seekForwardBtn");
 const playbackSpeedSelect = document.getElementById("playbackSpeedSelect");
+const stagePlaybackSpeedSelect = document.getElementById("stagePlaybackSpeedSelect");
+const stageToolbarGroups = Array.from(document.querySelectorAll(".stage-actions .stage-toolbar-group"));
 const statusText = document.getElementById("statusText");
 const imageInput = document.getElementById("imageInput");
 const imageCutoutStatus = document.getElementById("imageCutoutStatus");
@@ -186,6 +188,9 @@ const downloadFemaleBtn = document.getElementById("downloadFemaleBtn");
 const downloadIndianFemaleBtn = document.getElementById("downloadIndianFemaleBtn");
 const downloadFreshBtn = document.getElementById("downloadFreshBtn");
 const narrationGenStatus = document.getElementById("narrationGenStatus");
+const narrationLiveIndicator = document.getElementById("narrationLiveIndicator");
+const narrationLiveProgressFill = document.getElementById("narrationLiveProgressFill");
+const narrationLiveProgressLabel = document.getElementById("narrationLiveProgressLabel");
 const previewCanvas = document.getElementById("previewCanvas");
 let canvas = previewCanvas;
 let ctx = canvas.getContext("2d");
@@ -213,26 +218,63 @@ const PDF_FACE_MASK_PADDING_X = 1.2;
 const PDF_FACE_MASK_PADDING_TOP = 1.4;
 const PDF_FACE_MASK_PADDING_BOTTOM = 3.4;
 const PDF_FACE_MASK_MIN_SIZE = 28;
+const PDF_EXAMPLE_IMAGE_MAX_PER_PAGE = 4;
+const PDF_EXAMPLE_IMAGE_MIN_WIDTH_PX = 180;
+const PDF_EXAMPLE_IMAGE_MIN_HEIGHT_PX = 110;
+const PDF_CLIPBOARD_MARKER_ATTRIBUTE = "data-maths-teacher-pdf-copy";
 const MUX_PACKAGE_MAGIC = "LOMUX1";
 const STAGE_VIDEO_MAX_DIMENSION = 1280;
 const STAGE_VIDEO_CUTOUT_TOLERANCE = 66;
 const STAGE_VIDEO_EDGE_FEATHER = 22;
-const DEFAULT_INTRO_VIDEO_FILE = "default-intro-optimized.mp4";
+const DEFAULT_INTRO_VIDEO_FILE = "default-intro.mp4";
 const ANJALI_SAMPLE_AUDIO_FILE = "voice-preview-anjali.mp3";
 const EXPORT_NARRATION_VOICE = "anjali";
+// Central classroom-voice tuning keeps pronunciation behavior easy to adjust later.
+const NARRATION_STYLE_PROMPT = "Speak in a clear Indian female English teacher voice. Pronounce every word carefully and correctly. Maintain a calm classroom teaching pace. Use natural Indian English pronunciation. Speak maths expressions in full spoken form. Be warm, strict, and highly intelligible for school students. Avoid foreign accent drift. Avoid casual speech. Avoid fast delivery.";
+const NARRATION_STYLE_CONFIG = Object.freeze({
+  locale: "en-IN",
+  accent: "indian-female-english",
+  pacing: "calm-slower-classroom",
+  pronunciationMode: "strict-maths-teacher",
+  stylePrompt: NARRATION_STYLE_PROMPT
+});
 const ANJALI_TTS_PROFILE = Object.freeze({
   voiceId: "anjali",
   gender: "female",
   locale: "en-IN",
   accent: "indian",
-  style: "clear-child-friendly"
+  style: "soft-natural-classroom",
+  pronunciationMode: NARRATION_STYLE_CONFIG.pronunciationMode,
+  stylePrompt: NARRATION_STYLE_CONFIG.stylePrompt
+});
+const ANJALI_GENERATION_OPTIONS = Object.freeze({
+  repetitionPenalty: 1.08,
+  topP: 0.92,
+  temperature: 0.67,
+  topK: 80,
+  cfgWeight: 0,
+  exaggeration: 0,
+  minP: 0,
+  normLoudness: true
 });
 const STAGE_LEFT_CONTENT_GAP_PX = 132;
 const STAGE_RIGHT_CLEAR_GAP_PX = 380;
-const STAGE_TEXT_MARGIN_PX = 76;
-const NARRATION_CHUNK_MAX_LENGTH = 320;
-const NARRATION_CHUNK_THRESHOLD = 900;
-const DEFAULT_STAGE_PLAYBACK_RATE = 0.85;
+const STAGE_TEXT_SIDE_MARGIN_PX = 64;
+const STAGE_TEXT_TOP_MARGIN_PX = 32;
+const STAGE_TEXT_BOTTOM_MARGIN_PX = 42;
+const STAGE_IMAGE_WORKSPACE_PADDING_PX = 34;
+const STAGE_IMAGE_WORKSPACE_TOP_PX = 18;
+const STAGE_IMAGE_WORKSPACE_BOTTOM_PX = 20;
+const STAGE_PDF_IMAGE_STRIP_WIDTH_PX = 236;
+const STAGE_PDF_IMAGE_STRIP_GAP_PX = 18;
+const STAGE_IMAGE_MIN_WIDTH_PX = 72;
+const STAGE_IMAGE_MIN_HEIGHT_PX = 72;
+const STAGE_IMAGE_HANDLE_SIZE_PX = 16;
+const NARRATION_CHUNK_MAX_LENGTH = 560;
+const NARRATION_CHUNK_THRESHOLD = 1800;
+const ANJALI_NARRATION_CHUNK_MAX_LENGTH = 72;
+const ANJALI_NARRATION_CHUNK_THRESHOLD = 48;
+const DEFAULT_STAGE_PLAYBACK_RATE = 0.5;
 const STRICT_INTER_WORD_PAUSE_MS = 400;
 const STRICT_SENTENCE_PAUSE_MS = 800;
 const STRICT_SOFT_SENTENCE_PAUSE_MS = 520;
@@ -244,6 +286,13 @@ const STRICT_BACKGROUND_MUSIC_VOLUME = 0.2;
 const LIVE_SCENE_RENDER_FPS = 24;
 const EXPORT_SCENE_RENDER_FPS = 12;
 const SCENE_RENDER_MOUTH_DELTA = 0.035;
+const NARRATION_CHUNK_JOIN_GAP_MS = 120;
+const NARRATION_CHUNK_FADE_MS = 32;
+const SPEECH_SYNC_REVEAL_START = 0.16;
+const SPEECH_SYNC_REVEAL_END = 0.96;
+const SPEECH_SYNC_WORD_COMMIT_MIN = 0.54;
+const SPEECH_SYNC_WORD_COMMIT_MAX = 0.86;
+const SPEECH_SYNC_VISUAL_PROGRESS_LAG = 0.12;
 const MATHS_NUMBERS_TEMPLATE = `# Numbers
 1 is one.
 2 is two.
@@ -409,22 +458,64 @@ const SPOKEN_MEASUREMENT_UNITS = Object.freeze([
   Object.freeze({ short: "mins", singular: "minute", plural: "minutes" })
 ]);
 const SPOKEN_TERM_REPLACEMENTS = Object.freeze([
+  Object.freeze({ pattern: /\bAnjali\b/gi, replacement: "Ahn-ja-lee" }),
+  Object.freeze({ pattern: /\bIndia\b/gi, replacement: "In-dee-uh" }),
+  Object.freeze({ pattern: /\bIndian\b/gi, replacement: "In-dee-uhn" }),
+  Object.freeze({ pattern: /\bfemale\b/gi, replacement: "fee-mayl" }),
   Object.freeze({ pattern: /\bdecimal point\b/gi, replacement: "decimal point" }),
   Object.freeze({ pattern: /\bplace value\b/gi, replacement: "place value" }),
   Object.freeze({ pattern: /\bexpanded form\b/gi, replacement: "expanded form" }),
   Object.freeze({ pattern: /\blearning outcomes\b/gi, replacement: "learning outcomes" }),
   Object.freeze({ pattern: /\blearning time\b/gi, replacement: "learning time" }),
+  Object.freeze({ pattern: /\bmaths\b/gi, replacement: "maths" }),
+  Object.freeze({ pattern: /\bcm\b/gi, replacement: "centimetre" }),
+  Object.freeze({ pattern: /\bkm\b/gi, replacement: "kilometre" }),
+  Object.freeze({ pattern: /\bmm\b/gi, replacement: "millimetre" }),
+  Object.freeze({ pattern: /\bkg\b/gi, replacement: "kilogram" }),
+  Object.freeze({ pattern: /\bgm\b/gi, replacement: "gram" }),
+  Object.freeze({ pattern: /\bml\b/gi, replacement: "millilitre" }),
+  Object.freeze({ pattern: /\bmm2\b/gi, replacement: "square millimetres" }),
+  Object.freeze({ pattern: /\bcm2\b/gi, replacement: "square centimetres" }),
+  Object.freeze({ pattern: /\bm2\b/gi, replacement: "square metres" }),
+  Object.freeze({ pattern: /\bkm2\b/gi, replacement: "square kilometres" }),
+  Object.freeze({ pattern: /\bmrp\b/gi, replacement: "M R P" }),
+  Object.freeze({ pattern: /\bq\.\s*(\d+)/gi, replacement: "question $1" }),
+  Object.freeze({ pattern: /\bans\.\b/gi, replacement: "answer" }),
+  Object.freeze({ pattern: /\bex\.\b/gi, replacement: "exercise" }),
+  Object.freeze({ pattern: /\bst\.\b/gi, replacement: "standard" }),
+  Object.freeze({ pattern: /\bnos?\.\b/gi, replacement: "numbers" }),
+  Object.freeze({ pattern: /\bno\.\s*(\d+)/gi, replacement: "number $1" }),
+  Object.freeze({ pattern: /\bpg\.\s*(\d+)/gi, replacement: "page $1" }),
+  Object.freeze({ pattern: /\bqns?\.\b/gi, replacement: "questions" }),
+  Object.freeze({ pattern: /\bstd\.\b/gi, replacement: "standard" }),
   Object.freeze({ pattern: /\blike\s*&\s*unlike\b/gi, replacement: "like and unlike" }),
   Object.freeze({ pattern: /&/g, replacement: " and " }),
   Object.freeze({ pattern: /\u2192/g, replacement: " to " }),
   Object.freeze({ pattern: /_{2,}/g, replacement: " blank " }),
-  Object.freeze({ pattern: /\bcm\b/gi, replacement: "centimeter" }),
-  Object.freeze({ pattern: /\bkm\b/gi, replacement: "kilometer" }),
-  Object.freeze({ pattern: /\bmm\b/gi, replacement: "millimeter" }),
-  Object.freeze({ pattern: /\bkg\b/gi, replacement: "kilogram" }),
-  Object.freeze({ pattern: /\bgm\b/gi, replacement: "gram" }),
-  Object.freeze({ pattern: /\bml\b/gi, replacement: "milliliter" })
+  Object.freeze({ pattern: /₹/g, replacement: " rupees " })
 ]);
+const ORDINAL_WORD_MAP = Object.freeze({
+  1: "first",
+  2: "second",
+  3: "third",
+  4: "fourth",
+  5: "fifth",
+  6: "sixth",
+  7: "seventh",
+  8: "eighth",
+  9: "ninth",
+  10: "tenth",
+  11: "eleventh",
+  12: "twelfth",
+  13: "thirteenth",
+  14: "fourteenth",
+  15: "fifteenth",
+  16: "sixteenth",
+  17: "seventeenth",
+  18: "eighteenth",
+  19: "nineteenth",
+  20: "twentieth"
+});
 const NUMBER_SCALE_VALUES = Object.freeze({
   hundred: 100,
   thousand: 1000
@@ -484,6 +575,7 @@ const state = {
   introPlayback: {
     enabled: false,
     active: false,
+    previewVisible: false,
     available: null,
     fileName: "INTRO.mp4",
     url: DEFAULT_INTRO_VIDEO_FILE,
@@ -497,7 +589,8 @@ const state = {
     source: "",
     blob: null,
     textSource: "",
-    voice: ""
+    voice: "",
+    syncProfile: null
   },
   recording: {
     recorder: null,
@@ -563,9 +656,24 @@ const state = {
     text: "",
     voice: ""
   },
+  narrationLiveProgress: {
+    timerId: 0,
+    startedAt: 0,
+    label: "",
+    detail: "",
+    progress: 0
+  },
+  localServerStartup: {
+    active: false,
+    startedAt: 0
+  },
   anjaliMonitor: {
     timerId: 0,
-    lastKnownReady: null
+    lastKnownReady: null,
+    warming: false,
+    lastError: "",
+    modelLoaded: false,
+    generationActiveCount: 0
   },
   lessonInputTimerId: 0,
   contentScrollOffset: 0,
@@ -616,6 +724,7 @@ const state = {
     activeIndex: -1,
     hoverIndex: -1,
     hoverMode: "",
+    activeHandle: "",
     mode: "",
     pointerId: null,
     startPointerX: 0,
@@ -623,7 +732,8 @@ const state = {
     startX: 0,
     startY: 0,
     startWidth: 0,
-    startHeight: 0
+    startHeight: 0,
+    startAspectRatio: 4 / 3
   },
   imageRenderBoxes: [],
   stageVideoEditor: {
@@ -805,6 +915,110 @@ function setNarrationGenStatus(message) {
   if (result.isError) {
     showRuntimeDisplayError(result.text);
   }
+}
+
+function clearNarrationLiveProgressTimer() {
+  if (state.narrationLiveProgress.timerId) {
+    window.clearInterval(state.narrationLiveProgress.timerId);
+    state.narrationLiveProgress.timerId = 0;
+  }
+}
+
+function renderNarrationLiveProgress(options = {}) {
+  if (!narrationLiveIndicator || !narrationLiveProgressLabel || !narrationLiveProgressFill) {
+    return;
+  }
+
+  const safeProgress = clamp(
+    Number.isFinite(options.progress) ? options.progress : state.narrationLiveProgress.progress,
+    0,
+    1
+  );
+  const elapsedMs = Math.max(0, Date.now() - (state.narrationLiveProgress.startedAt || Date.now()));
+  const label = options.label || state.narrationLiveProgress.label || "Generating anjali narration...";
+  const detail = options.detail || state.narrationLiveProgress.detail || `${formatDurationMs(elapsedMs)} elapsed`;
+
+  state.narrationLiveProgress.progress = safeProgress;
+  state.narrationLiveProgress.label = label;
+  state.narrationLiveProgress.detail = detail;
+
+  narrationLiveProgressLabel.textContent = `${label} ${detail}`.trim();
+  narrationLiveIndicator.classList.remove("hidden");
+  narrationLiveIndicator.classList.toggle("is-active", options.active !== false);
+  narrationLiveIndicator.classList.toggle("is-complete", Boolean(options.complete));
+  narrationLiveIndicator.classList.toggle("is-error", Boolean(options.error));
+
+  if (options.complete || options.error) {
+    narrationLiveProgressFill.style.width = "100%";
+  } else {
+    narrationLiveProgressFill.style.width = `${Math.max(12, Math.round(safeProgress * 100))}%`;
+  }
+}
+
+function startNarrationLiveProgress(label) {
+  clearNarrationLiveProgressTimer();
+  state.narrationLiveProgress.startedAt = Date.now();
+  state.narrationLiveProgress.label = String(label || "Generating anjali narration...");
+  state.narrationLiveProgress.detail = "0s elapsed";
+  state.narrationLiveProgress.progress = 0.08;
+  renderNarrationLiveProgress({
+    label: state.narrationLiveProgress.label,
+    detail: state.narrationLiveProgress.detail,
+    progress: state.narrationLiveProgress.progress,
+    active: true
+  });
+  state.narrationLiveProgress.timerId = window.setInterval(() => {
+    const elapsedMs = Math.max(0, Date.now() - state.narrationLiveProgress.startedAt);
+    renderNarrationLiveProgress({
+      label: state.narrationLiveProgress.label,
+      detail: `${formatDurationMs(elapsedMs)} elapsed`,
+      progress: state.narrationLiveProgress.progress,
+      active: true
+    });
+  }, 1000);
+}
+
+function updateNarrationLiveProgress(label, progress) {
+  if (!state.generatingNarration && !state.narrationLiveProgress.startedAt) {
+    return;
+  }
+
+  const safeLabel = String(label || state.narrationLiveProgress.label || "Generating anjali narration...");
+  const safeProgress = clamp(Number.isFinite(progress) ? progress : state.narrationLiveProgress.progress, 0, 0.96);
+  const elapsedMs = Math.max(0, Date.now() - (state.narrationLiveProgress.startedAt || Date.now()));
+  renderNarrationLiveProgress({
+    label: safeLabel,
+    detail: `${formatDurationMs(elapsedMs)} elapsed`,
+    progress: safeProgress,
+    active: true
+  });
+}
+
+function finishNarrationLiveProgress(message, options = {}) {
+  if (!narrationLiveIndicator) {
+    return;
+  }
+
+  clearNarrationLiveProgressTimer();
+  const safeMessage = String(message || (options.error ? "Narration generation failed." : "Narration ready."));
+  renderNarrationLiveProgress({
+    label: safeMessage,
+    detail: options.error ? "Please try again." : "Completed",
+    progress: 1,
+    active: false,
+    complete: !options.error,
+    error: Boolean(options.error)
+  });
+  window.setTimeout(() => {
+    narrationLiveIndicator.classList.add("hidden");
+    narrationLiveIndicator.classList.remove("is-active", "is-complete", "is-error");
+    narrationLiveProgressFill.style.width = "0%";
+    narrationLiveProgressLabel.textContent = "Anjali narration is preparing...";
+  }, options.error ? 2800 : 1800);
+  state.narrationLiveProgress.startedAt = 0;
+  state.narrationLiveProgress.label = "";
+  state.narrationLiveProgress.detail = "";
+  state.narrationLiveProgress.progress = 0;
 }
 
 function setMathsHelperStatus(message) {
@@ -1615,6 +1829,10 @@ function getPdfExportBitrate(quality = getEffectiveExportQuality(), renderMode =
 }
 
 async function fetchWithTimeout(resource, options = {}, timeoutMs = 2500) {
+  if (!Number.isFinite(Number(timeoutMs)) || Number(timeoutMs) <= 0) {
+    return fetch(resource, options);
+  }
+
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1947,8 +2165,50 @@ function expandMetricUnitTokensForSpeech(text = "") {
   return spokenText;
 }
 
+function convertOrdinalSuffixToWords(valueText = "", suffix = "") {
+  const numericValue = Number(String(valueText || "").replace(/,/g, ""));
+  if (!Number.isFinite(numericValue)) {
+    return `${valueText}${suffix}`;
+  }
+
+  if (ORDINAL_WORD_MAP[numericValue]) {
+    return ORDINAL_WORD_MAP[numericValue];
+  }
+
+  const baseWords = convertDecimalNumberToWords(valueText);
+  if (/y$/i.test(baseWords)) {
+    return baseWords.replace(/y$/i, "ieth");
+  }
+
+  return `${baseWords}th`;
+}
+
+function normalizeNarrationSourceText(text = "") {
+  return String(text || "")
+    .replace(/\bRs\.?\s*(?=\d)/gi, "rupees ")
+    .replace(/\bINR\s*(?=\d)/gi, "rupees ")
+    .replace(/₹\s*/g, "rupees ")
+    .replace(/\bNo\.?\s*(\d+)/gi, "number $1")
+    .replace(/\bQ(?:uestion)?\.?\s*(\d+)/gi, "question $1")
+    .replace(/\bAns\.?\b/gi, "answer")
+    .replace(/\bEx\.?\b/gi, "exercise")
+    .replace(/\bStd\.?\b/gi, "standard")
+    .replace(/\bPg(?:age)?\.?\s*(\d+)/gi, "page $1")
+    .replace(/\bQ\.?\s*No\.?\b/gi, "question number ")
+    .replace(/\b(\d+)(st|nd|rd|th)\b/gi, (match, valueText, suffix) => convertOrdinalSuffixToWords(valueText, suffix))
+    .replace(/(?<=\d)\s*[xX*]\s*(?=\d)/g, " multiplied by ")
+    .replace(/(?<=\d)\s*\/\s*(?=\d)/g, " / ")
+    .replace(/(?<=\d)\s*-\s*(?=\d)/g, " minus ")
+    .replace(/(?<=\d)\s*\+\s*(?=\d)/g, " plus ")
+    .replace(/(?<=\d)\s*=\s*(?=\d)/g, " equals ")
+    .replace(/\btable of\s+(\d+)/gi, (match, valueText) => `table of ${valueText}`)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function expandTeachingTermsForSpeech(text = "") {
-  let spokenText = expandMetricUnitTokensForSpeech(expandMeasuredUnitsForSpeech(text));
+  let spokenText = normalizeNarrationSourceText(text);
+  spokenText = expandMetricUnitTokensForSpeech(expandMeasuredUnitsForSpeech(spokenText));
 
   SPOKEN_TERM_REPLACEMENTS.forEach(({ pattern, replacement }) => {
     spokenText = spokenText.replace(pattern, replacement);
@@ -1964,11 +2224,14 @@ function verbalizeMathForSpeech(text) {
   return expandTeachingTermsForSpeech(text)
     .replace(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, verbalizeFractionToken)
     .replace(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/g, "$1 ratio $2")
+    .replace(/\*/g, " multiplied by ")
     .replace(/(\d+(?:,\d+)*(?:\.\d+)?)/g, (match) => convertDecimalNumberToWords(match))
     .replace(/×/g, " multiplied by ")
     .replace(/÷/g, " divided by ")
+    .replace(/\//g, " divided by ")
     .replace(/\+/g, " plus ")
     .replace(/(?<!\d)-(?=\d)/g, " minus ")
+    .replace(/(?<=\d)\s*-\s*(?=\d)/g, " minus ")
     .replace(/=/g, " equals ")
     .replace(/≤/g, " less than or equal to ")
     .replace(/≥/g, " greater than or equal to ")
@@ -2021,17 +2284,33 @@ function buildNarrationText(text) {
     .join(" ");
 }
 
-function splitNarrationIntoChunks(text, maxChunkLength = NARRATION_CHUNK_MAX_LENGTH) {
-  const narrationText = buildNarrationText(text);
-  if (!narrationText) {
+function buildNarrationRequestPayload(text) {
+  return buildNarrationRequestPayloadFromNarrationText(buildNarrationText(text));
+}
+
+function buildNarrationRequestPayloadFromNarrationText(narrationText = "") {
+  return {
+    text: String(narrationText || "").trim(),
+    voiceProfile: {
+      ...ANJALI_TTS_PROFILE,
+      ...NARRATION_STYLE_CONFIG
+    },
+    generationOptions: ANJALI_GENERATION_OPTIONS,
+    narrationStylePrompt: NARRATION_STYLE_PROMPT
+  };
+}
+
+function splitNarrationTextIntoChunks(narrationText, maxChunkLength = NARRATION_CHUNK_MAX_LENGTH) {
+  const safeNarrationText = String(narrationText || "").trim();
+  if (!safeNarrationText) {
     return [];
   }
 
-  if (narrationText.length <= maxChunkLength) {
-    return [narrationText];
+  if (safeNarrationText.length <= maxChunkLength) {
+    return [safeNarrationText];
   }
 
-  const sentenceParts = narrationText.split(/(?<=[.!?;:])\s+/).filter(Boolean);
+  const sentenceParts = safeNarrationText.split(/(?<=[.!?;:])\s+/).filter(Boolean);
   const chunks = [];
   let currentChunk = "";
 
@@ -2079,7 +2358,25 @@ function splitNarrationIntoChunks(text, maxChunkLength = NARRATION_CHUNK_MAX_LEN
   });
 
   pushCurrentChunk();
-  return chunks.length ? chunks : [narrationText];
+  return chunks.length ? chunks : [safeNarrationText];
+}
+
+function splitNarrationIntoChunks(text, maxChunkLength = NARRATION_CHUNK_MAX_LENGTH) {
+  return splitNarrationTextIntoChunks(buildNarrationText(text), maxChunkLength);
+}
+
+function getNarrationChunkConfig(voice) {
+  if (voice === "anjali") {
+    return {
+      maxChunkLength: ANJALI_NARRATION_CHUNK_MAX_LENGTH,
+      threshold: ANJALI_NARRATION_CHUNK_THRESHOLD
+    };
+  }
+
+  return {
+    maxChunkLength: NARRATION_CHUNK_MAX_LENGTH,
+    threshold: NARRATION_CHUNK_THRESHOLD
+  };
 }
 
 const DEFAULT_NARRATION_REQUEST_TIMEOUT_MS = 45000;
@@ -2222,6 +2519,22 @@ function getVisibleTextForProgress(text = "", progress = 0, options = {}) {
   return profile.tokens.slice(0, visibleCount).join("");
 }
 
+function getVisibleChunkText(chunkText = "", speechProgress = 0) {
+  const safeChunkText = String(chunkText || "");
+  if (!safeChunkText) {
+    return "";
+  }
+
+  const delayedProgress = clamp(
+    (clamp(speechProgress, 0, 1) - SPEECH_SYNC_REVEAL_START)
+      / Math.max(0.01, SPEECH_SYNC_REVEAL_END - SPEECH_SYNC_REVEAL_START),
+    0,
+    1
+  );
+
+  return getVisibleTextForProgress(safeChunkText, delayedProgress);
+}
+
 function getSpeechSyncTokenSpeechMs(chunkText = "") {
   const safeChunk = String(chunkText || "");
   const spokenCore = verbalizeMathForSpeech(safeChunk)
@@ -2270,6 +2583,159 @@ function getSpeechSyncTokenPauseMs(chunkText = "") {
   return STRICT_INTER_WORD_PAUSE_MS;
 }
 
+function getSpeechSyncCommitThreshold(chunkText = "") {
+  const safeChunk = String(chunkText || "");
+  const spokenCore = verbalizeMathForSpeech(safeChunk)
+    .trim()
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .replace(/[^A-Za-z0-9]+$/, "");
+  if (!spokenCore) {
+    return SPEECH_SYNC_WORD_COMMIT_MAX;
+  }
+
+  const characterCount = spokenCore.replace(/\s+/g, "").length;
+  const punctuationBoost = /[,:;.!?]["')\]]*\s*$/i.test(safeChunk) ? 0.08 : 0;
+  const mathsBoost = /[=+\-xX*/÷×<>√^%]/.test(safeChunk) ? 0.05 : 0;
+  const lengthBoost = clamp((characterCount - 6) * 0.018, 0, 0.16);
+  return clamp(
+    SPEECH_SYNC_WORD_COMMIT_MIN + punctuationBoost + mathsBoost + lengthBoost,
+    SPEECH_SYNC_WORD_COMMIT_MIN,
+    SPEECH_SYNC_WORD_COMMIT_MAX
+  );
+}
+
+function tokenizeSpeechSyncDisplayText(text = "") {
+  const safeText = String(text || "");
+  const tokenPattern = /(\r?\n+|[ \t]+|\d+(?:,\d+)*(?:\.\d+)?(?:\/\d+(?:,\d+)*(?:\.\d+)?)?|[A-Za-z]+(?:['’-][A-Za-z]+)*|<=|>=|==|!=|[=+\-×÷*/<>≤≥≠^%:;,.!?()[\]{}]|.)/g;
+  const tokens = [];
+  let match = tokenPattern.exec(safeText);
+
+  while (match) {
+    tokens.push({
+      text: match[0],
+      startIndex: match.index,
+      endIndex: match.index + match[0].length
+    });
+    match = tokenPattern.exec(safeText);
+  }
+
+  return tokens;
+}
+
+function getSpeechSyncLineContext(lineText = "") {
+  const safeLine = String(lineText || "");
+  const trimmed = safeLine.trim();
+  if (!trimmed) {
+    return {
+      isHeading: false,
+      isTeachingCue: false,
+      isMathHeavy: false,
+      isBlank: true
+    };
+  }
+
+  return {
+    isHeading: /^\s*#{1,3}\s+/.test(safeLine)
+      || (
+        trimmed.length <= 58
+        && /^[A-Z][A-Za-z0-9 ,&()/-]*:?$/.test(trimmed)
+        && !/[=+\-×÷*/<>≤≥≠^%]/.test(trimmed)
+      ),
+    isTeachingCue: /^(example|step|answer|rule|quiz|question|exercise|practice|solve|convert|compare)\b/i.test(trimmed),
+    isMathHeavy: /[=+\-×÷*/<>≤≥≠^%]/.test(safeLine)
+      || (/\d/.test(safeLine) && /\b(cm|mm|km|hm|dam|m|dm|kg|gm|ml|decimal|fraction|table|percent)\b/i.test(safeLine)),
+    isBlank: false
+  };
+}
+
+function getSpeechSyncUnitSpokenText(displayText = "") {
+  const safeText = String(displayText || "");
+  if (!safeText.trim() || /^[,.;:!?()[\]{}]+$/.test(safeText)) {
+    return "";
+  }
+
+  return verbalizeMathForSpeech(safeText)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getSpeechSyncUnitSpeechMs(unit) {
+  if (!unit?.spokenText) {
+    return 0;
+  }
+
+  const wordCount = splitIntoWords(unit.spokenText).length;
+  const characterCount = unit.spokenText.replace(/\s+/g, "").length;
+  const contextBoost = [
+    unit.lineContext?.isHeading ? 1.18 : 1,
+    unit.lineContext?.isTeachingCue ? 1.1 : 1,
+    unit.lineContext?.isMathHeavy ? 1.08 : 1,
+    /\d/.test(unit.displayText) ? 1.06 : 1,
+    /[=+\-×÷*/<>≤≥≠^%]/.test(unit.displayText) ? 1.12 : 1
+  ].reduce((product, value) => product * value, 1);
+
+  return Math.max(180, Math.round(((wordCount * 220) + (characterCount * 28)) * contextBoost));
+}
+
+function getSpeechSyncUnitPauseMs(unit, nextUnit = null) {
+  const displayText = String(unit?.displayText || "");
+  if (!displayText) {
+    return 0;
+  }
+
+  if (/^\r?\n+$/.test(displayText)) {
+    if ((unit?.lineContext?.isHeading || unit?.lineContext?.isTeachingCue) || displayText.length > 1) {
+      return STRICT_HEADING_PAUSE_MS;
+    }
+    return STRICT_SENTENCE_PAUSE_MS;
+  }
+
+  if (/^[ \t]+$/.test(displayText)) {
+    return Math.round(STRICT_INTER_WORD_PAUSE_MS * 0.3);
+  }
+
+  if (/^[.!?]+$/.test(displayText)) {
+    return STRICT_SENTENCE_PAUSE_MS;
+  }
+
+  if (/^[:;]+$/.test(displayText)) {
+    return STRICT_SOFT_SENTENCE_PAUSE_MS;
+  }
+
+  if (/^,+$/.test(displayText)) {
+    return Math.round(STRICT_INTER_WORD_PAUSE_MS * 0.9);
+  }
+
+  if (!nextUnit || /^\r?\n+$/.test(nextUnit.displayText || "")) {
+    return unit?.lineContext?.isHeading ? STRICT_HEADING_PAUSE_MS : Math.round(STRICT_INTER_WORD_PAUSE_MS * 0.4);
+  }
+
+  return 0;
+}
+
+function analyzeSpeechSyncUnits(text = "") {
+  const safeText = String(text || "");
+  const lineContexts = safeText.split(/\r?\n/).map((line) => getSpeechSyncLineContext(line));
+  let lineIndex = 0;
+
+  return tokenizeSpeechSyncDisplayText(safeText).map((token) => {
+    const lineContext = lineContexts[Math.min(lineIndex, Math.max(0, lineContexts.length - 1))] || getSpeechSyncLineContext("");
+    const unit = {
+      displayText: token.text,
+      startIndex: token.startIndex,
+      endIndex: token.endIndex,
+      lineContext,
+      spokenText: getSpeechSyncUnitSpokenText(token.text)
+    };
+
+    if (/^\r?\n+$/.test(token.text)) {
+      lineIndex += (token.text.match(/\n/g) || []).length;
+    }
+
+    return unit;
+  });
+}
+
 function getSpeechSyncProfile(text = "", targetDurationMs = 0) {
   const safeText = String(text || "");
   const safeTargetDurationMs = Math.max(0, Math.round(Number(targetDurationMs) || 0));
@@ -2279,57 +2745,59 @@ function getSpeechSyncProfile(text = "", targetDurationMs = 0) {
     return cachedProfile;
   }
 
-  const chunks = [];
-  const chunkPattern = /\S+\s*/g;
-  let match = chunkPattern.exec(safeText);
+  const units = analyzeSpeechSyncUnits(safeText);
 
-  while (match) {
-    chunks.push({
-      text: match[0],
-      startIndex: match.index,
-      endIndex: match.index + match[0].length,
-      speechMs: getSpeechSyncTokenSpeechMs(match[0]),
-      pauseMs: getSpeechSyncTokenPauseMs(match[0])
-    });
-    match = chunkPattern.exec(safeText);
-  }
-
-  if (!chunks.length) {
+  if (!units.length) {
     const emptyProfile = {
-      chunks: [],
+      units: [],
       totalDurationMs: Math.max(6000, safeTargetDurationMs || 6000)
     };
     speechSyncProfileCache.set(cacheKey, emptyProfile);
     return emptyProfile;
   }
 
-  const baseDurationMs = chunks.reduce((sum, chunk) => sum + chunk.speechMs + chunk.pauseMs, 0);
+  const estimatedUnits = units.map((unit, index) => ({
+    ...unit,
+    speechMs: getSpeechSyncUnitSpeechMs(unit),
+    pauseMs: 0
+  }));
+
+  estimatedUnits.forEach((unit, index) => {
+    unit.pauseMs = getSpeechSyncUnitPauseMs(unit, estimatedUnits[index + 1] || null);
+  });
+
+  const baseDurationMs = estimatedUnits.reduce((sum, unit) => sum + unit.speechMs + unit.pauseMs, 0);
   const scaledDurationMs = safeTargetDurationMs > 0 ? safeTargetDurationMs : baseDurationMs;
   const scale = baseDurationMs > 0 ? (scaledDurationMs / baseDurationMs) : 1;
   let cursorMs = 0;
 
-  let normalizedChunks = chunks.map((chunk, index) => {
-    const scaledSpeechMs = Math.max(140, Math.round(chunk.speechMs * scale));
-    const scaledPauseMs = Math.max(index === chunks.length - 1 ? 0 : 80, Math.round(chunk.pauseMs * scale));
-    const nextChunk = {
-      ...chunk,
+  let normalizedUnits = estimatedUnits.map((unit, index) => {
+    const scaledSpeechMs = unit.spokenText
+      ? Math.max(140, Math.round(unit.speechMs * scale))
+      : 0;
+    const scaledPauseMs = Math.max(
+      index === estimatedUnits.length - 1 ? 0 : 0,
+      Math.round(unit.pauseMs * scale)
+    );
+    const nextUnit = {
+      ...unit,
       speechStartMs: cursorMs,
       speechEndMs: cursorMs + scaledSpeechMs,
       pauseEndMs: cursorMs + scaledSpeechMs + scaledPauseMs
     };
-    cursorMs = nextChunk.pauseEndMs;
-    return nextChunk;
+    cursorMs = nextUnit.pauseEndMs;
+    return nextUnit;
   });
 
-  const normalizedTotalDurationMs = normalizedChunks[normalizedChunks.length - 1]?.pauseEndMs || scaledDurationMs;
-  if (safeTargetDurationMs > 0 && normalizedChunks.length && normalizedTotalDurationMs > 0) {
+  const normalizedTotalDurationMs = normalizedUnits[normalizedUnits.length - 1]?.pauseEndMs || scaledDurationMs;
+  if (safeTargetDurationMs > 0 && normalizedUnits.length && normalizedTotalDurationMs > 0) {
     let lastPauseEndMs = 0;
-    normalizedChunks = normalizedChunks.map((chunk, index) => {
-      const scaledSpeechStartMs = Math.round((chunk.speechStartMs / normalizedTotalDurationMs) * safeTargetDurationMs);
-      const scaledSpeechEndMs = Math.round((chunk.speechEndMs / normalizedTotalDurationMs) * safeTargetDurationMs);
-      const scaledPauseEndMs = index === normalizedChunks.length - 1
+    normalizedUnits = normalizedUnits.map((unit, index) => {
+      const scaledSpeechStartMs = Math.round((unit.speechStartMs / normalizedTotalDurationMs) * safeTargetDurationMs);
+      const scaledSpeechEndMs = Math.round((unit.speechEndMs / normalizedTotalDurationMs) * safeTargetDurationMs);
+      const scaledPauseEndMs = index === normalizedUnits.length - 1
         ? safeTargetDurationMs
-        : Math.round((chunk.pauseEndMs / normalizedTotalDurationMs) * safeTargetDurationMs);
+        : Math.round((unit.pauseEndMs / normalizedTotalDurationMs) * safeTargetDurationMs);
 
       const speechStartMs = clamp(scaledSpeechStartMs, lastPauseEndMs, safeTargetDurationMs);
       const speechEndMs = clamp(Math.max(speechStartMs, scaledSpeechEndMs), speechStartMs, safeTargetDurationMs);
@@ -2337,7 +2805,7 @@ function getSpeechSyncProfile(text = "", targetDurationMs = 0) {
       lastPauseEndMs = pauseEndMs;
 
       return {
-        ...chunk,
+        ...unit,
         speechStartMs,
         speechEndMs,
         pauseEndMs
@@ -2346,10 +2814,10 @@ function getSpeechSyncProfile(text = "", targetDurationMs = 0) {
   }
 
   const profile = {
-    chunks: normalizedChunks,
+    units: normalizedUnits,
     totalDurationMs: safeTargetDurationMs > 0
       ? safeTargetDurationMs
-      : Math.max(scaledDurationMs, normalizedChunks[normalizedChunks.length - 1]?.pauseEndMs || scaledDurationMs)
+      : Math.max(scaledDurationMs, normalizedUnits[normalizedUnits.length - 1]?.pauseEndMs || scaledDurationMs)
   };
 
   speechSyncProfileCache.set(cacheKey, profile);
@@ -2359,6 +2827,163 @@ function getSpeechSyncProfile(text = "", targetDurationMs = 0) {
   }
 
   return profile;
+}
+
+function scaleSpeechSyncProfile(profile, targetDurationMs = 0) {
+  const safeTargetDurationMs = Math.max(0, Math.round(Number(targetDurationMs) || 0));
+  if (!profile || !Array.isArray(profile.units) || !profile.units.length || !safeTargetDurationMs || safeTargetDurationMs === profile.totalDurationMs) {
+    return profile;
+  }
+
+  const baseDurationMs = Math.max(1, Math.round(Number(profile.totalDurationMs) || 1));
+  let lastPauseEndMs = 0;
+  const scaledUnits = profile.units.map((unit, index) => {
+    const scaledSpeechStartMs = Math.round((unit.speechStartMs / baseDurationMs) * safeTargetDurationMs);
+    const scaledSpeechEndMs = Math.round((unit.speechEndMs / baseDurationMs) * safeTargetDurationMs);
+    const scaledPauseEndMs = index === profile.units.length - 1
+      ? safeTargetDurationMs
+      : Math.round((unit.pauseEndMs / baseDurationMs) * safeTargetDurationMs);
+    const speechStartMs = clamp(scaledSpeechStartMs, lastPauseEndMs, safeTargetDurationMs);
+    const speechEndMs = clamp(Math.max(speechStartMs, scaledSpeechEndMs), speechStartMs, safeTargetDurationMs);
+    const pauseEndMs = clamp(Math.max(speechEndMs, scaledPauseEndMs), speechEndMs, safeTargetDurationMs);
+    lastPauseEndMs = pauseEndMs;
+    return {
+      ...unit,
+      speechStartMs,
+      speechEndMs,
+      pauseEndMs
+    };
+  });
+
+  return {
+    ...profile,
+    units: scaledUnits,
+    totalDurationMs: safeTargetDurationMs
+  };
+}
+
+function buildSpeechSyncProfileFromChunkDurations(text = "", narrationChunks = [], chunkDurationsMs = []) {
+  const safeText = String(text || "");
+  const safeChunks = Array.isArray(narrationChunks)
+    ? narrationChunks.map((chunk) => String(chunk || "").trim()).filter(Boolean)
+    : [];
+  const safeDurations = Array.isArray(chunkDurationsMs)
+    ? chunkDurationsMs.map((value) => Math.max(1, Math.round(Number(value) || 0))).filter((value) => value > 0)
+    : [];
+
+  if (!safeText || !safeChunks.length || safeChunks.length !== safeDurations.length) {
+    return null;
+  }
+
+  const estimatedProfile = getSpeechSyncProfile(safeText, 0);
+  const estimatedUnits = Array.isArray(estimatedProfile.units) ? estimatedProfile.units : [];
+  if (!estimatedUnits.length) {
+    return null;
+  }
+
+  const chunkCharacterTargets = safeChunks.map((chunk) => Math.max(1, chunk.replace(/\s+/g, "").length));
+  const cumulativeTargets = [];
+  chunkCharacterTargets.reduce((sum, value, index) => {
+    const total = sum + value;
+    cumulativeTargets[index] = total;
+    return total;
+  }, 0);
+
+  let spokenCharacterCursor = 0;
+  let activeChunkIndex = 0;
+  const unitsByChunk = safeDurations.map(() => []);
+
+  estimatedUnits.forEach((unit) => {
+    const spokenLength = unit.spokenText ? Math.max(1, unit.spokenText.replace(/\s+/g, "").length) : 0;
+    const midpoint = spokenCharacterCursor + (spokenLength * 0.5);
+    while (
+      activeChunkIndex < (cumulativeTargets.length - 1)
+      && midpoint > cumulativeTargets[activeChunkIndex]
+    ) {
+      activeChunkIndex += 1;
+    }
+
+    unitsByChunk[activeChunkIndex].push(unit);
+    spokenCharacterCursor += spokenLength;
+  });
+
+  let globalCursorMs = 0;
+  const normalizedUnits = [];
+
+  safeDurations.forEach((chunkDurationMs, chunkIndex) => {
+    const chunkUnits = unitsByChunk[chunkIndex] || [];
+    if (!chunkUnits.length) {
+      globalCursorMs += chunkDurationMs;
+      return;
+    }
+
+    const baseChunkDurationMs = chunkUnits.reduce((sum, unit) => {
+      const speechMs = Math.max(0, Number(unit.speechMs) || 0);
+      const pauseMs = Math.max(0, Number(unit.pauseMs) || 0);
+      return sum + speechMs + pauseMs;
+    }, 0);
+    const scale = baseChunkDurationMs > 0 ? (chunkDurationMs / baseChunkDurationMs) : 1;
+    let localCursorMs = 0;
+
+    const localUnits = chunkUnits.map((unit) => {
+      const speechMs = unit.spokenText
+        ? Math.max(40, Math.round((Number(unit.speechMs) || 0) * scale))
+        : 0;
+      const pauseMs = Math.max(0, Math.round((Number(unit.pauseMs) || 0) * scale));
+      const nextUnit = {
+        ...unit,
+        speechStartMs: localCursorMs,
+        speechEndMs: localCursorMs + speechMs,
+        pauseEndMs: localCursorMs + speechMs + pauseMs
+      };
+      localCursorMs = nextUnit.pauseEndMs;
+      return nextUnit;
+    });
+
+    const normalizedChunkUnits = scaleSpeechSyncProfile({
+      units: localUnits,
+      totalDurationMs: localUnits[localUnits.length - 1]?.pauseEndMs || chunkDurationMs
+    }, chunkDurationMs)?.units || localUnits;
+
+    normalizedChunkUnits.forEach((unit) => {
+      normalizedUnits.push({
+        ...unit,
+        speechStartMs: globalCursorMs + unit.speechStartMs,
+        speechEndMs: globalCursorMs + unit.speechEndMs,
+        pauseEndMs: globalCursorMs + unit.pauseEndMs
+      });
+    });
+
+    globalCursorMs += chunkDurationMs;
+  });
+
+  if (!normalizedUnits.length) {
+    return null;
+  }
+
+  return {
+    units: normalizedUnits,
+    totalDurationMs: Math.max(1, globalCursorMs)
+  };
+}
+
+function getResolvedSpeechSyncProfile(text = "", targetDurationMs = 0) {
+  const safeText = String(text || "");
+  const safeTargetDurationMs = Math.max(0, Math.round(Number(targetDurationMs) || 0));
+  const narrationProfile = state.narration?.syncProfile;
+  if (
+    narrationProfile
+    && narrationProfile.text === safeText
+    && narrationProfile.profile
+    && Array.isArray(narrationProfile.profile.units)
+    && narrationProfile.profile.units.length
+  ) {
+    return safeTargetDurationMs > 0
+      ? scaleSpeechSyncProfile(narrationProfile.profile, safeTargetDurationMs)
+      : narrationProfile.profile;
+  }
+
+  return getSpeechSyncProfile(safeText, safeTargetDurationMs);
 }
 
 function getSpeechSyncFrame(text = "", elapsedMs = 0, targetDurationMs = 0) {
@@ -2371,42 +2996,44 @@ function getSpeechSyncFrame(text = "", elapsedMs = 0, targetDurationMs = 0) {
     };
   }
 
-  const profile = getSpeechSyncProfile(safeText, targetDurationMs);
+  const profile = getResolvedSpeechSyncProfile(safeText, targetDurationMs);
   const safeElapsedMs = clamp(Number(elapsedMs) || 0, 0, profile.totalDurationMs);
-
-  let displayedText = safeElapsedMs > 0 ? "" : "";
+  let displayedText = "";
   let mouthActive = false;
   let speechElapsedMs = 0;
 
-  for (const chunk of profile.chunks) {
-    if (safeElapsedMs >= chunk.pauseEndMs) {
-      displayedText = safeText.slice(0, chunk.endIndex);
+  for (const unit of profile.units) {
+    if (safeElapsedMs >= unit.pauseEndMs) {
+      displayedText = safeText.slice(0, unit.endIndex);
       continue;
     }
 
-    if (safeElapsedMs >= chunk.speechStartMs && safeElapsedMs <= chunk.speechEndMs) {
+    if (!unit.spokenText) {
+      displayedText = safeText.slice(0, unit.endIndex);
+      mouthActive = false;
+      speechElapsedMs = 0;
+      break;
+    }
+
+    if (safeElapsedMs >= unit.speechStartMs && safeElapsedMs <= unit.speechEndMs) {
       const speechProgress = clamp(
-        (safeElapsedMs - chunk.speechStartMs) / Math.max(1, chunk.speechEndMs - chunk.speechStartMs),
+        (safeElapsedMs - unit.speechStartMs) / Math.max(1, unit.speechEndMs - unit.speechStartMs),
         0,
         1
       );
-      const revealCount = clamp(
-        Math.ceil(chunk.text.length * easeOutCubic(speechProgress)),
-        1,
-        chunk.text.length
-      );
-      displayedText = `${safeText.slice(0, chunk.startIndex)}${chunk.text.slice(0, revealCount)}`;
+      const visibleUnitText = getVisibleChunkText(unit.displayText, speechProgress);
+      displayedText = `${safeText.slice(0, unit.startIndex)}${visibleUnitText}`;
       mouthActive = true;
-      speechElapsedMs = safeElapsedMs - chunk.speechStartMs;
+      speechElapsedMs = safeElapsedMs - unit.speechStartMs;
       break;
     }
 
-    if (safeElapsedMs >= chunk.speechEndMs && safeElapsedMs < chunk.pauseEndMs) {
-      displayedText = safeText.slice(0, chunk.endIndex);
+    if (safeElapsedMs >= unit.speechEndMs && safeElapsedMs < unit.pauseEndMs) {
+      displayedText = safeText.slice(0, unit.endIndex);
       break;
     }
 
-    if (safeElapsedMs < chunk.speechStartMs) {
+    if (safeElapsedMs < unit.speechStartMs) {
       break;
     }
   }
@@ -2771,20 +3398,7 @@ function clearNarrationWarmupTimer() {
 }
 
 function shouldWarmupNarration(text, voice) {
-  const safeText = String(text || "").trim();
-  const narrationText = buildNarrationText(safeText);
-  const wordCount = splitIntoWords(narrationText).length;
-
-  return Boolean(
-    safeText
-    && voice === "anjali"
-    && !state.speaking
-    && !state.exportingVideo
-    && !state.generatingNarration
-    && !state.inputPreviewing
-    && !isPdfPresentationMode()
-    && wordCount <= 40
-  );
+  return false;
 }
 
 function scheduleNarrationWarmup(delayMs = 700) {
@@ -2817,8 +3431,12 @@ function scheduleNarrationWarmup(delayMs = 700) {
 
     state.narrationWarmup.active = true;
     try {
+      let syncProfile = null;
       const blob = await requestNarrationBlob(text, voice, {
-        timeoutMs: getLongNarrationRequestTimeoutMs(text)
+        timeoutMs: getLongNarrationRequestTimeoutMs(text),
+        onSyncProfile: (profile) => {
+          syncProfile = profile;
+        }
       });
       if (
         requestId !== state.narrationWarmup.requestId
@@ -2830,7 +3448,7 @@ function scheduleNarrationWarmup(delayMs = 700) {
 
       const fileName = `generated-${voice}-narration.wav`;
       const label = `Generated ${getNarrationVoiceLabel(voice).toLowerCase()} narration`;
-      await setNarrationFromBlob(blob, fileName, label, text, voice, { silent: true });
+      await setNarrationFromBlob(blob, fileName, label, text, voice, { silent: true, syncProfile });
     } catch (error) {
       console.error(error);
     } finally {
@@ -3191,7 +3809,7 @@ function handleLessonInputChange() {
   if (!stagePanel.classList.contains("hidden") && !isPdfPresentationMode() && !state.speaking) {
     drawScene(state.mouthOpen);
     setStatus(nextText
-      ? `Screen updated automatically. ${getNarrationVoiceLabel(state.preferredNarrationVoice).toLowerCase()} voice will read the latest output text.`
+      ? "Screen updated automatically. Click Play Slide when you want narration to start."
       : "Type maths content and the screen will update automatically.");
   }
 
@@ -3298,9 +3916,17 @@ function updateSpeechToolsUi() {
   }
   if (loadAnjaliNarrationBtn) {
     loadAnjaliNarrationBtn.disabled = !lessonInput.value.trim() || state.generatingNarration;
+    loadAnjaliNarrationBtn.textContent = state.generatingNarration
+      ? "Generating Anjali..."
+      : "Generate Anjali Narration";
+    loadAnjaliNarrationBtn.setAttribute("aria-busy", state.generatingNarration ? "true" : "false");
   }
   if (downloadAnjaliBtn) {
     downloadAnjaliBtn.disabled = !lessonInput.value.trim() || state.generatingNarration;
+    downloadAnjaliBtn.textContent = state.generatingNarration
+      ? "Preparing Download..."
+      : "Download Anjali Narration";
+    downloadAnjaliBtn.setAttribute("aria-busy", state.generatingNarration ? "true" : "false");
   }
   transcribeAudioInput.disabled = state.transcribing;
   submitTranscribeBtn.disabled = !state.transcribeSelectedFile || state.transcribing;
@@ -3399,7 +4025,7 @@ function hasActivePdfSelection() {
 }
 
 function shouldPreferPdfScreenFromInput() {
-  return hasActivePdfSelection();
+  return false;
 }
 
 function getPdfPresentationText() {
@@ -3478,10 +4104,21 @@ function getStagePlaybackRate() {
   return isPdfPresentationMode() ? getPdfPlaybackRate() : getLessonPlaybackRate();
 }
 
+function applyNaturalVoicePlayback(audioElement, playbackRate = getStagePlaybackRate()) {
+  if (!audioElement) {
+    return;
+  }
+
+  audioElement.playbackRate = playbackRate;
+  audioElement.preservesPitch = true;
+  audioElement.mozPreservesPitch = true;
+  audioElement.webkitPreservesPitch = true;
+}
+
 function getSpeechSynthesisPlaybackRate(playbackRate = getStagePlaybackRate()) {
   return clamp(
-    Math.round(clamp(Number(playbackRate) || DEFAULT_STAGE_PLAYBACK_RATE, 0.5, 2) * 88) / 100,
-    0.55,
+    Math.round(clamp(Number(playbackRate) || DEFAULT_STAGE_PLAYBACK_RATE, 0.5, 2) * 100) / 100,
+    0.5,
     1
   );
 }
@@ -3766,6 +4403,63 @@ async function copyTextToClipboard(text) {
   }
 }
 
+function buildPdfClipboardHtml(text, exampleImages = []) {
+  const safeText = escapeHtml(text || "");
+  const imageMarkup = exampleImages.map((image, index) => `
+      <figure style="margin:0 0 12px 0;">
+        <img
+          src="${image.dataUrl}"
+          alt="${escapeHtml(image.label || `Example image ${index + 1}`)}"
+          data-maths-teacher-example-image="1"
+          data-file-name="${escapeHtml(image.fileName || `pdf-page-example-${index + 1}.png`)}"
+          data-anchor-text="${escapeHtml(image.anchorText || "")}"
+          data-anchor-order="${Number.isFinite(Number(image.anchorOrder)) ? Number(image.anchorOrder) : index}"
+          data-source-page-number="${Number.isFinite(Number(image.pageNumber)) ? Number(image.pageNumber) : 0}"
+          style="display:block;max-width:100%;height:auto;border-radius:10px;border:1px solid #d7e4ee;"
+        />
+      </figure>
+    `).join("");
+
+  return `
+    <div ${PDF_CLIPBOARD_MARKER_ATTRIBUTE}="1" style="font-family:Arial,sans-serif;color:#1f2933;">
+      <pre data-maths-teacher-pdf-text="1" style="white-space:pre-wrap;margin:0 0 12px 0;font:inherit;">${safeText}</pre>
+      ${imageMarkup}
+    </div>
+  `;
+}
+
+async function copyPdfPageContent(page, pageIndex) {
+  const text = `${page?.text || ""}`.trim();
+  const exampleImages = Array.isArray(page?.exampleImages) ? page.exampleImages : [];
+
+  if (!text && !exampleImages.length) {
+    throw new Error("There is no readable text or example image to copy for this PDF page.");
+  }
+
+  if (navigator.clipboard?.write && typeof window.ClipboardItem === "function") {
+    try {
+      const html = buildPdfClipboardHtml(text, exampleImages);
+      const clipboardItem = new window.ClipboardItem({
+        "text/plain": new Blob([text], { type: "text/plain" }),
+        "text/html": new Blob([html], { type: "text/html" })
+      });
+      await navigator.clipboard.write([clipboardItem]);
+      return {
+        imageCount: exampleImages.length,
+        pageNumber: pageIndex + 1
+      };
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  await copyTextToClipboard(text);
+  return {
+    imageCount: 0,
+    pageNumber: pageIndex + 1
+  };
+}
+
 function renderPdfPreview() {
   pdfPreviewList.innerHTML = "";
 
@@ -3782,6 +4476,8 @@ function renderPdfPreview() {
   pdfMeta.textContent = `${state.pdf.fileName} | ${state.pdf.pageCount} PDF page${state.pdf.pageCount === 1 ? "" : "s"} | ${textSummary}`;
 
   state.pdf.pageTexts.forEach((pageText, index) => {
+    const page = state.pdf.pages[index] || {};
+    const exampleImages = Array.isArray(page.exampleImages) ? page.exampleImages : [];
     const card = document.createElement("article");
     card.className = "pdf-preview-item";
 
@@ -3795,14 +4491,18 @@ function renderPdfPreview() {
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "ghost-btn pdf-preview-copy-btn";
-    copyBtn.title = `Copy extracted text from PDF page ${index + 1}`;
-    copyBtn.setAttribute("aria-label", `Copy extracted text from PDF page ${index + 1}`);
+    copyBtn.title = `Copy PDF page ${index + 1} text${exampleImages.length ? " and example images" : ""}`;
+    copyBtn.setAttribute("aria-label", `Copy PDF page ${index + 1} text${exampleImages.length ? " and example images" : ""}`);
     copyBtn.innerHTML = getCopyIconSvg();
-    copyBtn.disabled = !pageText.trim();
+    copyBtn.disabled = !pageText.trim() && !exampleImages.length;
     copyBtn.addEventListener("click", async () => {
       try {
-        await copyTextToClipboard(pageText);
-        setPdfStatus(`Copied extracted text from PDF page ${index + 1}.`);
+        const copyResult = await copyPdfPageContent(page, index);
+        setPdfStatus(
+          copyResult.imageCount
+            ? `Copied PDF page ${index + 1} text and ${copyResult.imageCount} maths/example image${copyResult.imageCount === 1 ? "" : "s"} only. Paste into the lesson box to place those images on the presentation screen.`
+            : `Copied extracted text from PDF page ${index + 1}.`
+        );
       } catch (error) {
         console.error(error);
         setPdfStatus(error.message || `Could not copy PDF page ${index + 1}.`);
@@ -3817,6 +4517,38 @@ function renderPdfPreview() {
     previewHead.appendChild(copyBtn);
     card.appendChild(previewHead);
     card.appendChild(previewText);
+
+    if (exampleImages.length) {
+      const imageTitle = document.createElement("p");
+      imageTitle.className = "pdf-preview-images-title";
+      imageTitle.textContent = `Detected maths/example images only (${exampleImages.length})`;
+      card.appendChild(imageTitle);
+
+      const imageGrid = document.createElement("div");
+      imageGrid.className = "pdf-preview-image-grid";
+
+      exampleImages.forEach((image, imageIndex) => {
+        const figure = document.createElement("figure");
+        figure.className = "pdf-preview-image-card";
+
+        const img = document.createElement("img");
+        img.className = "pdf-preview-image";
+        img.src = image.dataUrl;
+        img.alt = image.label || `Example image ${imageIndex + 1} from PDF page ${index + 1}`;
+        img.loading = "lazy";
+
+        const caption = document.createElement("figcaption");
+        caption.className = "pdf-preview-image-caption";
+        caption.textContent = image.label || `Example image ${imageIndex + 1}`;
+
+        figure.appendChild(img);
+        figure.appendChild(caption);
+        imageGrid.appendChild(figure);
+      });
+
+      card.appendChild(imageGrid);
+    }
+
     pdfPreviewList.appendChild(card);
   });
 
@@ -4103,6 +4835,310 @@ function buildPdfPageText(items = []) {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildPdfLineObjects(items = [], sourcePageHeight = 0, renderScale = 1) {
+  if (!Array.isArray(items) || !items.length) {
+    return [];
+  }
+
+  const lines = [];
+  let currentLine = [];
+  let lastY = null;
+  let lastX = null;
+  let lastHeight = 0;
+
+  const flushLine = () => {
+    const text = normalizePdfLine(currentLine.map((item) => item.text).join(""));
+    const visibleTokens = currentLine.filter((item) => item.width > 0 && item.height > 0);
+    if (!text || !visibleTokens.length) {
+      currentLine = [];
+      lastX = null;
+      return;
+    }
+
+    const left = Math.min(...visibleTokens.map((item) => item.x));
+    const top = Math.min(...visibleTokens.map((item) => item.y));
+    const right = Math.max(...visibleTokens.map((item) => item.x + item.width));
+    const bottom = Math.max(...visibleTokens.map((item) => item.y + item.height));
+
+    lines.push({
+      text,
+      x: left,
+      y: top,
+      width: Math.max(1, right - left),
+      height: Math.max(1, bottom - top)
+    });
+
+    currentLine = [];
+    lastX = null;
+  };
+
+  items.forEach((item) => {
+    if (!item || typeof item.str !== "string") {
+      return;
+    }
+
+    const rawText = item.str;
+    const sourceX = Number(item.transform?.[4] ?? 0);
+    const sourceY = Number(item.transform?.[5] ?? 0);
+    const sourceHeight = Math.max(
+      12,
+      Math.abs(Number(item.height || 0)),
+      Math.abs(Number(item.transform?.[3] || 0)),
+      lastHeight || 0
+    );
+    const scaledHeight = sourceHeight * renderScale;
+    const scaledY = Math.max(0, sourcePageHeight - sourceY - sourceHeight) * renderScale;
+    const scaledX = sourceX * renderScale;
+    const scaledWidth = Math.max(1, Number(item.width || 0) * renderScale);
+
+    if (lastY !== null) {
+      const lineJump = Math.abs(sourceY - lastY);
+      const newLineThreshold = Math.max(4, sourceHeight * 0.55);
+
+      if (lineJump > newLineThreshold) {
+        flushLine();
+      } else if (currentLine.length && lastX !== null) {
+        const gap = sourceX - lastX;
+        const needsSpace = gap > Math.max(5, sourceHeight * 0.2)
+          && !/\s$/.test(currentLine[currentLine.length - 1].text)
+          && rawText
+          && !/^[,.;:!?%)\]]/.test(rawText);
+
+        if (needsSpace) {
+          currentLine.push({
+            text: " ",
+            x: scaledX,
+            y: scaledY,
+            width: 0,
+            height: 0
+          });
+        }
+      }
+    }
+
+    currentLine.push({
+      text: rawText,
+      x: scaledX,
+      y: scaledY,
+      width: scaledWidth,
+      height: scaledHeight
+    });
+
+    lastY = sourceY;
+    lastHeight = sourceHeight;
+    lastX = sourceX + Number(item.width || 0);
+
+    if (item.hasEOL) {
+      flushLine();
+    }
+  });
+
+  flushLine();
+  return lines;
+}
+
+function isLikelyPdfExampleLine(text = "") {
+  const line = normalizePdfLine(text).toLowerCase();
+  if (!line) {
+    return false;
+  }
+
+  if (/\b(example|exercise|question|quiz|solve|find|compare|convert|add|subtract|multiply|division|divide|table|sum|answer|expanded form|place value|fraction|decimal|metric)\b/.test(line)) {
+    return true;
+  }
+
+  const digitCount = (line.match(/\d/g) || []).length;
+  const operatorCount = (line.match(/[=+\-×÷*/<>%]/g) || []).length;
+  const hasUnits = /\b(cm|mm|km|hm|dam|m|dm|kg|gm|ml|rupees|rs\.?)\b/.test(line);
+
+  return (digitCount >= 2 && (operatorCount >= 1 || hasUnits))
+    || (digitCount >= 3 && /\b(blank|ladder|step|steps)\b/.test(line));
+}
+
+function isLikelyPdfSectionHeading(text = "") {
+  const line = normalizePdfLine(text);
+  if (!line) {
+    return false;
+  }
+
+  return line.length < 72
+    && !/[=+\-×÷*/<>%]/.test(line)
+    && /^(#|\b(chapter|lesson|topic|concept|summary|quick facts|practice|example)\b)/i.test(line);
+}
+
+function getRectIntersectionArea(left, right) {
+  const overlapWidth = Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
+  const overlapHeight = Math.max(0, Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y));
+  return overlapWidth * overlapHeight;
+}
+
+function expandPdfExampleBounds(bounds, pageWidth, pageHeight) {
+  const minWidth = Math.min(pageWidth, PDF_EXAMPLE_IMAGE_MIN_WIDTH_PX);
+  const minHeight = Math.min(pageHeight, PDF_EXAMPLE_IMAGE_MIN_HEIGHT_PX);
+  const paddedWidth = Math.max(minWidth, bounds.width + 44);
+  const paddedHeight = Math.max(minHeight, bounds.height + 36);
+  const centerX = bounds.x + (bounds.width / 2);
+  const centerY = bounds.y + (bounds.height / 2);
+
+  const width = Math.min(pageWidth, paddedWidth);
+  const height = Math.min(pageHeight, paddedHeight);
+  const x = clamp(Math.round(centerX - (width / 2)), 0, Math.max(0, pageWidth - width));
+  const y = clamp(Math.round(centerY - (height / 2)), 0, Math.max(0, pageHeight - height));
+
+  return { x, y, width, height };
+}
+
+function extractPdfExampleImageAssets(items = [], presentationCanvas, sourcePageHeight = 0, renderScale = 1, maskRects = [], pageNumber = 1) {
+  if (!presentationCanvas || !items.length) {
+    return [];
+  }
+
+  const lines = buildPdfLineObjects(items, sourcePageHeight, renderScale);
+  if (!lines.length) {
+    return [];
+  }
+
+  const candidateBounds = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!isLikelyPdfExampleLine(line.text)) {
+      continue;
+    }
+
+    let bounds = {
+      x: line.x,
+      y: line.y,
+      width: line.width,
+      height: line.height
+    };
+    let endIndex = index;
+
+    while (endIndex + 1 < lines.length && (endIndex - index) < 4) {
+      const nextLine = lines[endIndex + 1];
+      const previousLine = lines[endIndex];
+      const gap = nextLine.y - (previousLine.y + previousLine.height);
+
+      if (gap > Math.max(56, previousLine.height * 2.6)) {
+        break;
+      }
+
+      if ((endIndex > index) && isLikelyPdfSectionHeading(nextLine.text)) {
+        break;
+      }
+
+      const left = Math.min(bounds.x, nextLine.x);
+      const top = Math.min(bounds.y, nextLine.y);
+      const right = Math.max(bounds.x + bounds.width, nextLine.x + nextLine.width);
+      const bottom = Math.max(bounds.y + bounds.height, nextLine.y + nextLine.height);
+      bounds = {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top
+      };
+      endIndex += 1;
+    }
+
+    const expandedBounds = expandPdfExampleBounds(
+      bounds,
+      presentationCanvas.width,
+      presentationCanvas.height
+    );
+
+    const maskedOverlapRatio = maskRects.reduce((highestRatio, maskRect) => {
+      const overlapArea = getRectIntersectionArea(expandedBounds, maskRect);
+      return Math.max(highestRatio, overlapArea / Math.max(1, expandedBounds.width * expandedBounds.height));
+    }, 0);
+
+    if (maskedOverlapRatio > 0.16) {
+      continue;
+    }
+
+    if ((expandedBounds.width / presentationCanvas.width) > 0.96 && (expandedBounds.height / presentationCanvas.height) > 0.88) {
+      continue;
+    }
+
+    const overlapsExisting = candidateBounds.some((existingBounds) => {
+      const overlapArea = getRectIntersectionArea(existingBounds, expandedBounds);
+      const smallestArea = Math.min(
+        existingBounds.width * existingBounds.height,
+        expandedBounds.width * expandedBounds.height
+      );
+      return overlapArea / Math.max(1, smallestArea) > 0.56;
+    });
+
+    if (!overlapsExisting) {
+      candidateBounds.push(expandedBounds);
+    }
+
+    if (candidateBounds.length >= PDF_EXAMPLE_IMAGE_MAX_PER_PAGE) {
+      break;
+    }
+  }
+
+  return candidateBounds.map((bounds, index) => {
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = Math.max(1, Math.round(bounds.width));
+    cropCanvas.height = Math.max(1, Math.round(bounds.height));
+    const cropContext = cropCanvas.getContext("2d", { alpha: false });
+    cropContext.fillStyle = "#ffffff";
+    cropContext.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
+    cropContext.drawImage(
+      presentationCanvas,
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      0,
+      0,
+      cropCanvas.width,
+      cropCanvas.height
+    );
+
+    const anchorLines = lines
+      .filter((line) => {
+        const verticallyClose = (line.y + line.height) >= (bounds.y - 18)
+          && line.y <= (bounds.y + bounds.height + 18);
+        const horizontalOverlap = getRectIntersectionArea(bounds, {
+          x: line.x,
+          y: line.y,
+          width: line.width,
+          height: line.height
+        });
+        return verticallyClose && horizontalOverlap > 0;
+      })
+      .slice(0, 3);
+    const anchorText = anchorLines
+      .map((line) => normalizePdfLine(line.text))
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    return {
+      id: `pdf-example-${pageNumber}-${index + 1}`,
+      label: `Maths example image ${index + 1}`,
+      fileName: `pdf-page-${pageNumber}-example-${index + 1}.png`,
+      pageNumber,
+      anchorText,
+      anchorOrder: index,
+      width: cropCanvas.width,
+      height: cropCanvas.height,
+      bounds,
+      dataUrl: cropCanvas.toDataURL("image/png")
+    };
+  });
+}
+
 function preparePdfLibrary() {
   if (!window.pdfjsLib || !window.pdfjsWorker?.WorkerMessageHandler) {
     return null;
@@ -4222,7 +5258,8 @@ async function createFilteredPdfPageCanvas(sourceCanvas) {
     return {
       canvas: sourceCanvas,
       humanContentMasked: false,
-      maskedFaceCount: 0
+      maskedFaceCount: 0,
+      maskRects: []
     };
   }
 
@@ -4232,7 +5269,8 @@ async function createFilteredPdfPageCanvas(sourceCanvas) {
       return {
         canvas: sourceCanvas,
         humanContentMasked: false,
-        maskedFaceCount: 0
+        maskedFaceCount: 0,
+        maskRects: []
       };
     }
 
@@ -4244,12 +5282,15 @@ async function createFilteredPdfPageCanvas(sourceCanvas) {
     filteredContext.fillRect(0, 0, filteredCanvas.width, filteredCanvas.height);
     filteredContext.drawImage(sourceCanvas, 0, 0);
 
+    const maskRects = [];
+
     faces.forEach((face) => {
       const maskRect = getPdfFaceMaskRect(face?.boundingBox, filteredCanvas.width, filteredCanvas.height);
       if (!maskRect.width || !maskRect.height) {
         return;
       }
 
+      maskRects.push(maskRect);
       filteredContext.fillStyle = "#ffffff";
       filteredContext.fillRect(maskRect.x, maskRect.y, maskRect.width, maskRect.height);
     });
@@ -4257,7 +5298,8 @@ async function createFilteredPdfPageCanvas(sourceCanvas) {
     return {
       canvas: filteredCanvas,
       humanContentMasked: true,
-      maskedFaceCount: faces.length
+      maskedFaceCount: faces.length,
+      maskRects
     };
   } catch (error) {
     console.error(error);
@@ -4265,7 +5307,8 @@ async function createFilteredPdfPageCanvas(sourceCanvas) {
     return {
       canvas: sourceCanvas,
       humanContentMasked: false,
-      maskedFaceCount: 0
+      maskedFaceCount: 0,
+      maskRects: []
     };
   }
 }
@@ -4309,12 +5352,21 @@ async function renderPdfPageAssets(pdfPage, pageNumber, textContent) {
 
   const pageText = buildPdfPageText(textContent.items);
   const wordCount = splitIntoWords(pageText).length;
+  const exampleImages = extractPdfExampleImageAssets(
+    textContent.items,
+    presentationCanvas,
+    sourceViewport.height,
+    renderScale,
+    filteredPage.maskRects || [],
+    pageNumber
+  );
 
   return {
     index: pageNumber - 1,
     pageNumber,
     text: pageText,
     wordCount,
+    exampleImages,
     renderCanvas: presentationCanvas,
     thumbnailUrl: thumbCanvas.toDataURL("image/png"),
     width: presentationCanvas.width,
@@ -4412,8 +5464,6 @@ async function loadSelectedPdf(forceReload = false) {
     state.pdf.totalDurationMs = getPdfScheduleTotalDuration(state.pdf.pageSchedule);
     rebuildPdfPresentationSchedule({ preserveTime: false });
 
-    lessonInput.value = payload.extractedText;
-    handleLessonInputChange();
     renderPdfPreview();
     renderPdfPageList();
     setPdfProgress(100, "Ready");
@@ -4423,12 +5473,12 @@ async function loadSelectedPdf(forceReload = false) {
       : "";
     setPdfStatus(
       payload.extractedText
-        ? `Loaded ${file.name}. The lesson box now contains the extracted PDF text, and the rendered pages are ready to present.${maskSummary}`
+        ? `Loaded ${file.name}. The extracted PDF content is ready in the PDF section. Copy only the page or examples you want into the lesson box.${maskSummary}`
         : `Loaded ${file.name}. No readable text was found, but the exact PDF page images are ready to show on screen.${maskSummary}`
       );
     setSpeechToolsStatus(
       payload.extractedText
-        ? "PDF text was added to the content box and the rendered PDF pages are ready for presentation."
+        ? "PDF text is ready in the extracted PDF section. Copy a page into the content box only where you want it."
         : "The PDF page images are ready. This file may be image-based, so reading may need OCR text from another source."
     );
     return true;
@@ -4790,6 +5840,10 @@ function updateStageModeUi() {
     playbackSpeedSelect.value = String(getStagePlaybackRate());
   }
 
+  if (stagePlaybackSpeedSelect && !Number.isNaN(Number(stagePlaybackSpeedSelect.value))) {
+    stagePlaybackSpeedSelect.value = String(getStagePlaybackRate());
+  }
+
   updateStageTimelineUi();
 }
 
@@ -4899,13 +5953,23 @@ async function ensureAnjaliNarrationReadyForExport(options = {}) {
     return state.narration.blob;
   }
 
-  const blob = await requestNarrationBlob(exportText, EXPORT_NARRATION_VOICE, options);
+  let syncProfile = null;
+  const blob = await requestNarrationBlob(exportText, EXPORT_NARRATION_VOICE, {
+    ...options,
+    onSyncProfile: (profile) => {
+      syncProfile = profile;
+      if (typeof options.onSyncProfile === "function") {
+        options.onSyncProfile(profile);
+      }
+    }
+  });
   await setNarrationFromBlob(
     blob,
     `generated-${EXPORT_NARRATION_VOICE}-narration.wav`,
     "Generated anjali narration",
     exportText,
-    EXPORT_NARRATION_VOICE
+    EXPORT_NARRATION_VOICE,
+    { syncProfile }
   );
   return blob;
 }
@@ -5037,8 +6101,7 @@ async function startPdfNarrationPlayback(statusMessage) {
 
   const audioElement = await createLoadedAudio(state.pdf.narration.url);
   audioElement.currentTime = resumeTimeMs / 1000;
-  audioElement.playbackRate = getPdfPlaybackRate();
-  audioElement.preservesPitch = false;
+  applyNaturalVoicePlayback(audioElement, getPdfPlaybackRate());
   audioElement.muted = false;
   audioElement.volume = 1;
   state.activeAudio = audioElement;
@@ -5145,16 +6208,14 @@ async function playPdfPresentation() {
 
   const narrationServerReady = await ensureAnjaliCloneServer();
   if (!narrationServerReady) {
-    startTimedPdfPresentation(`The local Anjali clone server is offline, so the app is presenting ${getPdfPresentationFallbackLabel()} with the timeline controls.`);
+    startTimedPdfPresentation(`The local Anjali voice server is offline, so the app is presenting ${getPdfPresentationFallbackLabel()} with the timeline controls.`);
     return;
   }
 
   try {
     setStatus("Preparing PDF narration...");
     updateTaskProgressUi(0.2, true, { mirrorStage: true });
-    await ensurePdfNarrationReadyForPresentation({
-      timeoutMs: getLongNarrationRequestTimeoutMs(pdfText)
-    });
+    await ensurePdfNarrationReadyForPresentation();
     updateTaskProgressUi(0.88, true, { mirrorStage: true });
     resetTaskProgressUi();
     await startPdfNarrationPlayback("PDF presentation is playing with generated narration.");
@@ -5263,11 +6324,18 @@ function handleStagePlaybackRateChange(nextRate) {
   state.pdf.currentTimeMs = currentTimeMs;
 
   if (state.activeAudio) {
-    state.activeAudio.playbackRate = getStagePlaybackRate();
-    state.activeAudio.preservesPitch = false;
+    applyNaturalVoicePlayback(state.activeAudio, getStagePlaybackRate());
   } else if (state.speaking) {
     state.pdf.timelineStartedAt = performance.now();
     state.pdf.timelineStartOffsetMs = currentTimeMs;
+  }
+
+  if (playbackSpeedSelect) {
+    playbackSpeedSelect.value = String(safeRate);
+  }
+
+  if (stagePlaybackSpeedSelect) {
+    stagePlaybackSpeedSelect.value = String(safeRate);
   }
 
   syncPdfPreviewPageFromTime(state.pdf.currentTimeMs);
@@ -5280,9 +6348,9 @@ function handleStagePlaybackRateChange(nextRate) {
   }
 
   if (isPdfPresentationMode()) {
-    setStatus(`PDF playback speed set to ${getPdfPlaybackRate()}x.`);
+    setStatus(`PDF playback speed set to ${getPdfPlaybackRate()}x. Voice pitch stays natural.`);
   } else {
-    setStatus(`Playback speed set to ${getLessonPlaybackRate()}x.`);
+    setStatus(`Playback speed set to ${getLessonPlaybackRate()}x. Voice pitch stays natural.`);
   }
 }
 
@@ -5292,6 +6360,10 @@ function initializeDefaultPlaybackRate() {
 
   if (playbackSpeedSelect) {
     playbackSpeedSelect.value = String(DEFAULT_STAGE_PLAYBACK_RATE);
+  }
+
+  if (stagePlaybackSpeedSelect) {
+    stagePlaybackSpeedSelect.value = String(DEFAULT_STAGE_PLAYBACK_RATE);
   }
 }
 
@@ -5364,6 +6436,22 @@ function getAnjaliCloneStoppedMessage() {
   return "Anjali clone server stopped. Click Start Servers or Check Servers, then wait for port 8426 to come back.";
 }
 
+function isAnjaliCloneStartupPending() {
+  return Boolean(!state.anjaliCloneServerReady && (state.anjaliMonitor.warming || state.localServerStartup.active));
+}
+
+function isAnjaliGenerationActive() {
+  return Number(state.anjaliMonitor.generationActiveCount || 0) > 0;
+}
+
+function beginAnjaliGenerationActivity() {
+  state.anjaliMonitor.generationActiveCount = Math.max(0, Number(state.anjaliMonitor.generationActiveCount || 0)) + 1;
+}
+
+function endAnjaliGenerationActivity() {
+  state.anjaliMonitor.generationActiveCount = Math.max(0, Number(state.anjaliMonitor.generationActiveCount || 0) - 1);
+}
+
 function handleAnjaliCloneServerTransition(isReady) {
   const previousReady = state.anjaliMonitor.lastKnownReady;
   state.anjaliMonitor.lastKnownReady = isReady;
@@ -5373,6 +6461,10 @@ function handleAnjaliCloneServerTransition(isReady) {
   }
 
   if (!isReady) {
+    if (state.localServerStartup.active) {
+      setServerControlsStatus("Anjali clone server is starting on port 8426. XTTS warm-up can take a few minutes on this laptop.");
+      return;
+    }
     const message = getAnjaliCloneStoppedMessage();
     setServerControlsStatus(message);
     showRuntimeDisplayError(message, { updateStatus: true });
@@ -5393,7 +6485,7 @@ async function refreshLocalServerHealth() {
   return areAllLocalServersReady();
 }
 
-async function waitForAllLocalServersReady(timeoutMs = 90000) {
+async function waitForAllLocalServersReady(timeoutMs = 240000) {
   const startedAt = Date.now();
 
   while ((Date.now() - startedAt) < timeoutMs) {
@@ -5406,7 +6498,9 @@ async function waitForAllLocalServersReady(timeoutMs = 90000) {
     const progress = 0.22 + (elapsedRatio * 0.7);
     const missing = getMissingLocalServerLabels();
     const waitingMessage = missing.length
-      ? `Starting local servers. Waiting for ${missing.join(", ")}...`
+      ? (missing.includes("Anjali 8426")
+        ? `Starting local servers. XTTS can take 2-4 minutes to warm up. Waiting for ${missing.join(", ")}...`
+        : `Starting local servers. Waiting for ${missing.join(", ")}...`)
       : "Starting local servers...";
     setServerControlsStatus(waitingMessage);
     updateTaskProgressUi(progress, true, { label: waitingMessage });
@@ -5449,17 +6543,23 @@ function triggerStartServersProtocol() {
 async function startServersFromPage() {
   setServerControlsStatus("Starting local servers. If Windows asks, allow Learning Outcomes Launcher to open.");
   updateTaskProgressUi(0.12, true);
+  state.localServerStartup.active = true;
+  state.localServerStartup.startedAt = Date.now();
+  updateServerHealthUi();
 
   try {
     triggerStartServersProtocol();
   } catch (error) {
     console.error(error);
+    state.localServerStartup.active = false;
+    updateServerHealthUi();
     setServerControlsStatus("The click launcher could not be opened. Use Copy Start Command once if needed.");
     resetTaskProgressUi();
     return;
   }
 
   const allReady = await waitForAllLocalServersReady();
+  state.localServerStartup.active = false;
   updateTaskProgressUi(1, true);
 
   if (allReady) {
@@ -5467,9 +6567,10 @@ async function startServersFromPage() {
   } else {
     const missing = getMissingLocalServerLabels();
     const suffix = missing.length ? ` Still waiting for ${missing.join(", ")}.` : "";
-    setServerControlsStatus(`The launcher started, but not every server became ready in time.${suffix} Click Start Servers again or use Copy Start Command if needed.`);
+    setServerControlsStatus(`The launcher started, but not every server became ready within 4 minutes.${suffix} If Anjali is still warming, wait a little longer and press Check Servers.`);
   }
 
+  updateServerHealthUi();
   resetTaskProgressUi();
 }
 
@@ -5493,7 +6594,9 @@ function updateServerHealthUi() {
   if (anjaliCloneHealthStatus) {
     anjaliCloneHealthStatus.textContent = state.anjaliCloneServerReady
       ? "Anjali clone server: running on port 8426"
-      : "Anjali clone server: not running";
+      : (isAnjaliCloneStartupPending()
+        ? "Anjali clone server: starting on port 8426..."
+        : "Anjali clone server: not running");
   }
 
   transcribeHealthStatus.textContent = state.transcribeServerReady
@@ -5507,9 +6610,9 @@ function updateServerHealthUi() {
 
 async function checkServerHealth() {
   setServerControlsStatus("Checking local servers...");
-  updateTaskProgressUi(0.18, true);
+  updateTaskProgressUi(0.18, true, { label: "Checking local servers..." });
   await Promise.all([ensureNarrationServer(), ensureAnjaliCloneServer(), ensureTranscribeServer(), ensureVideoExportServer()]);
-  updateTaskProgressUi(0.82, true);
+  updateTaskProgressUi(0.82, true, { label: "Refreshing local server status..." });
   updateServerHealthUi();
 
   if (state.narrationServerReady && state.anjaliCloneServerReady && state.transcribeServerReady && state.videoExportServerReady) {
@@ -5533,7 +6636,7 @@ async function ensureNarrationServer() {
   }
 
   if (!state.narrationServerReady) {
-    setNarrationGenStatus("Anjali narration stays available through the local clone server on port 8426.");
+    setNarrationGenStatus("Anjali narration needs the local narration server on port 8424.");
   }
 
   updateServerHealthUi();
@@ -5542,19 +6645,42 @@ async function ensureNarrationServer() {
 }
 
 async function ensureAnjaliCloneServer() {
+  if (isAnjaliGenerationActive()) {
+    const keepReady = Boolean(
+      state.anjaliCloneServerReady
+      || state.anjaliMonitor.lastKnownReady
+      || state.anjaliMonitor.modelLoaded
+    );
+    state.anjaliCloneServerReady = keepReady;
+    state.anjaliMonitor.warming = false;
+    updateServerHealthUi();
+    return keepReady;
+  }
+
   try {
     const response = await fetchWithTimeout(`${state.anjaliCloneServerUrl}/health`, {
       method: "GET",
       cache: "no-store"
     }, 8000);
     const payload = response.ok ? await response.clone().json().catch(() => null) : null;
+    state.anjaliMonitor.modelLoaded = Boolean(payload?.modelLoaded);
+    state.anjaliMonitor.warming = Boolean(response.ok && payload && payload.modelLoaded === false);
+    state.anjaliMonitor.lastError = String(payload?.error || "").trim();
     state.anjaliCloneServerReady = Boolean(response.ok && (payload?.modelLoaded ?? true));
   } catch (error) {
+    state.anjaliMonitor.modelLoaded = false;
+    state.anjaliMonitor.warming = false;
+    state.anjaliMonitor.lastError = "";
     state.anjaliCloneServerReady = false;
   }
 
   if (!state.anjaliCloneServerReady) {
-    setNarrationGenStatus("Anjali cloned narration needs the local Anjali clone server on port 8426. If it just started, give it a little time to warm up.");
+    if (isAnjaliCloneStartupPending()) {
+      setNarrationGenStatus("Anjali voice is starting on port 8426. Please wait while the voice model warms up.");
+      setServerControlsStatus("Anjali voice server is starting. Please wait while the voice model finishes loading.");
+    } else {
+      setNarrationGenStatus("Anjali cloned narration needs the local Anjali clone server on port 8426. If it just started, give it a little time to warm up.");
+    }
   }
 
   handleAnjaliCloneServerTransition(state.anjaliCloneServerReady);
@@ -5570,6 +6696,10 @@ function startAnjaliCloneMonitor() {
 
   state.anjaliMonitor.timerId = window.setInterval(() => {
     if (document.hidden) {
+      return;
+    }
+
+    if (isAnjaliGenerationActive()) {
       return;
     }
 
@@ -5633,17 +6763,37 @@ async function combineNarrationBlobs(blobs = []) {
 
     const sampleRate = decodedBuffers.reduce((best, buffer) => Math.max(best, buffer.sampleRate || 24000), 24000);
     const channelCount = decodedBuffers.reduce((best, buffer) => Math.max(best, buffer.numberOfChannels || 1), 1);
-    const totalDuration = decodedBuffers.reduce((sum, buffer) => sum + buffer.duration, 0);
+    const joinGapSeconds = Math.max(0, NARRATION_CHUNK_JOIN_GAP_MS / 1000);
+    const totalDuration = decodedBuffers.reduce((sum, buffer, index) => (
+      sum + buffer.duration + (index < (decodedBuffers.length - 1) ? joinGapSeconds : 0)
+    ), 0);
     const totalFrames = Math.max(1, Math.ceil(totalDuration * sampleRate) + 1);
     const offlineContext = new OfflineAudioContextConstructor(channelCount, totalFrames, sampleRate);
     let cursorTime = 0;
+    const fadeSeconds = Math.max(0.008, NARRATION_CHUNK_FADE_MS / 1000);
 
-    decodedBuffers.forEach((buffer) => {
+    decodedBuffers.forEach((buffer, index) => {
       const source = offlineContext.createBufferSource();
       source.buffer = buffer;
-      source.connect(offlineContext.destination);
+      const gainNode = offlineContext.createGain();
+      source.connect(gainNode);
+      gainNode.connect(offlineContext.destination);
+
+      const startTime = cursorTime;
+      const endTime = startTime + buffer.duration;
+      const effectiveFadeIn = Math.min(fadeSeconds, Math.max(0.004, buffer.duration * 0.18));
+      const effectiveFadeOut = Math.min(fadeSeconds, Math.max(0.004, buffer.duration * 0.18));
+
+      gainNode.gain.setValueAtTime(index === 0 ? 1 : 0.0001, startTime);
+      if (index > 0) {
+        gainNode.gain.linearRampToValueAtTime(1, Math.min(endTime, startTime + effectiveFadeIn));
+      }
+
+      gainNode.gain.setValueAtTime(1, Math.max(startTime, endTime - effectiveFadeOut));
+      gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
+
       source.start(cursorTime);
-      cursorTime += buffer.duration;
+      cursorTime += buffer.duration + (index < (decodedBuffers.length - 1) ? joinGapSeconds : 0);
     });
 
     const renderedBuffer = await offlineContext.startRendering();
@@ -6552,7 +7702,8 @@ function resetNarrationState() {
     source: "",
     blob: null,
     textSource: "",
-    voice: ""
+    voice: "",
+    syncProfile: null
   };
 }
 
@@ -6636,8 +7787,7 @@ async function playServerBackedTextPreview(text, voicePreference) {
 
   try {
     const audioElement = await createLoadedAudio(previewUrl);
-    audioElement.playbackRate = getLessonPlaybackRate();
-    audioElement.preservesPitch = false;
+    applyNaturalVoicePlayback(audioElement, getLessonPlaybackRate());
 
     state.inputPreviewing = true;
     state.previewAudio = audioElement;
@@ -6666,8 +7816,7 @@ async function playServerBackedTextPreview(text, voicePreference) {
 
 async function playDirectAudioPreview(audioUrl, voiceLabel) {
   const audioElement = await createLoadedAudio(audioUrl);
-  audioElement.playbackRate = getLessonPlaybackRate();
-  audioElement.preservesPitch = false;
+  applyNaturalVoicePlayback(audioElement, getLessonPlaybackRate());
 
   state.inputPreviewing = true;
   state.previewAudio = audioElement;
@@ -6712,25 +7861,36 @@ function getPreferredPreviewVoice(voicePreference) {
 
 async function requestNarrationBlobSingle(text, voice = state.preferredNarrationVoice || "anjali", options = {}) {
   const isAnjaliClone = voice === "anjali";
+  if (typeof options.onProgress === "function") {
+    options.onProgress({
+      label: isAnjaliClone ? "Checking Anjali voice server..." : "Checking narration server...",
+      progress: 0.12
+    });
+  }
   const serverReady = isAnjaliClone ? await ensureAnjaliCloneServer() : await ensureNarrationServer();
   if (!serverReady) {
-    throw new Error(isAnjaliClone ? "The local Anjali clone server is not running." : "The local narration server is not running.");
+    throw new Error(isAnjaliClone ? "The local Anjali voice server is not running." : "The local narration server is not running.");
   }
 
-  const narrationText = buildNarrationText(text);
+  const narrationText = typeof options.prebuiltNarrationText === "string"
+    ? String(options.prebuiltNarrationText || "").trim()
+    : buildNarrationText(text);
   if (!narrationText) {
     throw new Error("No narration text was available.");
   }
+  const narrationPayload = buildNarrationRequestPayloadFromNarrationText(narrationText);
 
-  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
-    ? options.timeoutMs
-    : DEFAULT_NARRATION_REQUEST_TIMEOUT_MS;
-  const effectiveTimeoutMs = isAnjaliClone ? Math.max(timeoutMs, 180000) : timeoutMs;
+  if (typeof options.onProgress === "function") {
+    options.onProgress({
+      label: isAnjaliClone ? "Sending text to Anjali voice server..." : "Sending text to narration server...",
+      progress: 0.22
+    });
+  }
 
   const response = await fetchWithTimeout(
     isAnjaliClone
       ? `${state.anjaliCloneServerUrl}/api/narrate`
-      : `${state.narrationServerUrl}/api/narrate?voice=${voice}`,
+      : `${state.narrationServerUrl}/api/narrate?voice=${encodeURIComponent(voice)}`,
     {
       method: "POST",
       headers: {
@@ -6738,14 +7898,11 @@ async function requestNarrationBlobSingle(text, voice = state.preferredNarration
       },
       body: JSON.stringify(
         isAnjaliClone
-          ? {
-            text: narrationText,
-            voiceProfile: ANJALI_TTS_PROFILE
-          }
+          ? narrationPayload
           : { text: narrationText }
       )
     },
-    effectiveTimeoutMs
+    0
   );
 
   if (!response.ok) {
@@ -6754,6 +7911,12 @@ async function requestNarrationBlobSingle(text, voice = state.preferredNarration
   }
 
   const contentType = response.headers.get("Content-Type") || "audio/wav";
+  if (typeof options.onProgress === "function") {
+    options.onProgress({
+      label: "Receiving generated audio...",
+      progress: 0.84
+    });
+  }
   if (/application\/json/i.test(contentType)) {
     const payload = await response.json().catch(() => null);
     if (!payload?.audioBase64) {
@@ -6768,7 +7931,30 @@ async function requestNarrationBlobSingle(text, voice = state.preferredNarration
     throw new Error("Narration generation returned an empty audio file.");
   }
 
+  if (typeof options.onProgress === "function") {
+    options.onProgress({
+      label: "Finalizing narration audio...",
+      progress: 0.94
+    });
+  }
+
   return blob.type === contentType ? blob : new Blob([blob], { type: contentType });
+}
+
+async function measureNarrationBlobDurationMs(blob) {
+  if (!blob?.size) {
+    return getDefaultNarrationDurationMs();
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const audioElement = await createLoadedAudio(objectUrl);
+    return Number.isFinite(audioElement.duration)
+      ? Math.max(1000, Math.ceil(audioElement.duration * 1000))
+      : getDefaultNarrationDurationMs();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 async function requestNarrationBlob(text, voice = state.preferredNarrationVoice || "anjali", options = {}) {
@@ -6777,41 +7963,91 @@ async function requestNarrationBlob(text, voice = state.preferredNarrationVoice 
     throw new Error("No narration text was available.");
   }
 
-  const chunkedText = narrationText.length > NARRATION_CHUNK_THRESHOLD
-    ? splitNarrationIntoChunks(narrationText)
+  const chunkConfig = getNarrationChunkConfig(voice);
+  const chunkedText = narrationText.length > chunkConfig.threshold
+    ? splitNarrationTextIntoChunks(narrationText, chunkConfig.maxChunkLength)
     : [narrationText];
 
-  if (chunkedText.length === 1) {
-    return requestNarrationBlobSingle(chunkedText[0], voice, options);
+  const trackAnjaliGeneration = voice === "anjali";
+  if (trackAnjaliGeneration) {
+    beginAnjaliGenerationActivity();
   }
 
-  const totalChunks = chunkedText.length;
-  const totalTimeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
-    ? options.timeoutMs
-    : getLongNarrationRequestTimeoutMs(narrationText);
-  const perChunkTimeoutMs = clamp(
-    Math.ceil(totalTimeoutMs / totalChunks),
-    DEFAULT_NARRATION_REQUEST_TIMEOUT_MS,
-    LONG_NARRATION_REQUEST_MAX_TIMEOUT_MS
-  );
-  const blobs = [];
-
-  for (let index = 0; index < totalChunks; index += 1) {
-    const chunk = chunkedText[index];
-    updateTaskProgressUi(
-      0.18 + (((index + 1) / totalChunks) * 0.56),
-      true,
-      {
-        label: `Generating narration part ${index + 1} of ${totalChunks}`
+  try {
+    if (chunkedText.length === 1) {
+      const blob = await requestNarrationBlobSingle(text, voice, {
+        ...options,
+        prebuiltNarrationText: chunkedText[0]
+      });
+      const chunkDurationMs = await measureNarrationBlobDurationMs(blob);
+      const syncProfile = buildSpeechSyncProfileFromChunkDurations(text, chunkedText, [chunkDurationMs]);
+      if (typeof options.onSyncProfile === "function" && syncProfile) {
+        options.onSyncProfile(syncProfile);
       }
-    );
-    blobs.push(await requestNarrationBlobSingle(chunk, voice, {
-      ...options,
-      timeoutMs: perChunkTimeoutMs
-    }));
-  }
+      return blob;
+    }
 
-  return combineNarrationBlobs(blobs);
+    const totalChunks = chunkedText.length;
+    const blobs = [];
+    const chunkDurationsMs = [];
+
+    for (let index = 0; index < totalChunks; index += 1) {
+      const chunk = chunkedText[index];
+      const startedProgress = 0.18 + ((index / totalChunks) * 0.56);
+      const completedProgress = 0.18 + (((index + 1) / totalChunks) * 0.56);
+      if (typeof options.onProgress === "function") {
+        options.onProgress({
+          label: `Generating narration part ${index + 1} of ${totalChunks}...`,
+          progress: startedProgress
+        });
+      }
+      updateTaskProgressUi(
+        startedProgress,
+        true,
+        {
+          label: `Generating narration part ${index + 1} of ${totalChunks}`
+        }
+      );
+      const blob = await requestNarrationBlobSingle(chunk, voice, {
+        ...options
+      ,
+        prebuiltNarrationText: chunk
+      });
+      blobs.push(blob);
+      chunkDurationsMs.push(await measureNarrationBlobDurationMs(blob));
+      if (typeof options.onProgress === "function") {
+        options.onProgress({
+          label: `Finished narration part ${index + 1} of ${totalChunks}.`,
+          progress: completedProgress
+        });
+      }
+      updateTaskProgressUi(
+        completedProgress,
+        true,
+        {
+          label: `Finished narration part ${index + 1} of ${totalChunks}`
+        }
+      );
+    }
+
+    if (typeof options.onProgress === "function") {
+      options.onProgress({
+        label: "Joining narration parts together...",
+        progress: 0.9
+      });
+    }
+
+    const combinedBlob = await combineNarrationBlobs(blobs);
+    const syncProfile = buildSpeechSyncProfileFromChunkDurations(text, chunkedText, chunkDurationsMs);
+    if (typeof options.onSyncProfile === "function" && syncProfile) {
+      options.onSyncProfile(syncProfile);
+    }
+    return combinedBlob;
+  } finally {
+    if (trackAnjaliGeneration) {
+      endAnjaliGenerationActivity();
+    }
+  }
 }
 
 async function getNarrationExportBlob() {
@@ -7335,18 +8571,19 @@ function wrapStyledRuns(ctxRef, runs, maxWidth, fontSize) {
   return rows;
 }
 
-function getContentLayout(lines, maxWidth, maxHeight, usePlaceholder = true) {
+function getContentLayout(lines, maxWidth, maxHeight, usePlaceholder = true, options = {}) {
   const safeLines = lines.length ? lines : (usePlaceholder ? ["Your content will appear here."] : []);
-  let fontSize = state.images.length ? 26 : 30;
+  const hasImages = options.hasImages === true || (options.hasImages !== false && state.images.length > 0);
+  let fontSize = hasImages ? 26 : 30;
 
   if (state.words.length > 520) {
-    fontSize = state.images.length ? 22 : 24;
+    fontSize = hasImages ? 22 : 24;
   } else if (state.words.length > 360) {
-    fontSize = state.images.length ? 23 : 25;
+    fontSize = hasImages ? 23 : 25;
   } else if (state.words.length > 220) {
-    fontSize = state.images.length ? 24 : 26;
+    fontSize = hasImages ? 24 : 26;
   } else if (state.words.length > 120) {
-    fontSize = state.images.length ? 25 : 28;
+    fontSize = hasImages ? 25 : 28;
   }
 
   fontSize = clamp(Math.round(fontSize * state.fontScale), 16, 54);
@@ -7438,10 +8675,13 @@ function getStageContentArea(pageIndex = state.previewPageIndex, forceHasImages 
   const hasImages = forceHasImages === null
     ? Boolean(getVisibleSlideImages(pageIndex).length)
     : Boolean(forceHasImages);
-  const leftInset = STAGE_TEXT_MARGIN_PX;
-  const topInset = STAGE_TEXT_MARGIN_PX;
-  const rightInset = hasImages ? 260 : STAGE_TEXT_MARGIN_PX;
-  const bottomInset = STAGE_TEXT_MARGIN_PX;
+  const leftInset = STAGE_TEXT_SIDE_MARGIN_PX;
+  const topInset = STAGE_TEXT_TOP_MARGIN_PX;
+  const pinnedStripArea = hasImages ? getPinnedPdfImageStripArea() : null;
+  const rightInset = hasImages && pinnedStripArea
+    ? Math.max(STAGE_TEXT_SIDE_MARGIN_PX, pinnedStripArea.width + STAGE_IMAGE_WORKSPACE_PADDING_PX + STAGE_PDF_IMAGE_STRIP_GAP_PX)
+    : STAGE_TEXT_SIDE_MARGIN_PX;
+  const bottomInset = STAGE_TEXT_BOTTOM_MARGIN_PX;
 
   return {
     x: leftInset,
@@ -7454,7 +8694,9 @@ function getStageContentArea(pageIndex = state.previewPageIndex, forceHasImages 
 function getPaginatedSlideContent(textValue, usePlaceholder = true, pageIndex = state.previewPageIndex, forceHasImages = null) {
   const contentArea = getStageContentArea(pageIndex, forceHasImages);
   const lines = textValue ? buildDisplayedLines(textValue) : [];
-  const layout = getContentLayout(lines, contentArea.width, contentArea.height, usePlaceholder);
+  const layout = getContentLayout(lines, contentArea.width, contentArea.height, usePlaceholder, {
+    hasImages: forceHasImages
+  });
   let cumulativeTextLength = 0;
   const pages = paginateLayout(layout, contentArea.height).map((page) => {
     const pageText = (page.rows || [])
@@ -8302,25 +9544,57 @@ function getImagePageIndexForItem(item, fallbackIndex = 0) {
   return Math.floor(Math.max(0, fallbackIndex) / SLIDE_IMAGES_PER_PAGE);
 }
 
+function getImageLayerOrder(item, fallbackIndex = 0) {
+  return Number.isFinite(item?.zIndex) ? Number(item.zIndex) : fallbackIndex;
+}
+
+function getNextImageLayerOrder(images = state.images) {
+  return images.reduce((highestLayer, item, index) => {
+    return Math.max(highestLayer, getImageLayerOrder(item, index));
+  }, -1) + 1;
+}
+
 function getImageEntriesForPage(pageIndex = 0, images = state.images) {
   return images
     .map((item, index) => ({ item, index }))
-    .filter(({ item, index }) => getImagePageIndexForItem(item, index) === pageIndex);
+    .filter(({ item, index }) => getImagePageIndexForItem(item, index) === pageIndex)
+    .sort((left, right) => {
+      const layerDifference = getImageLayerOrder(left.item, left.index) - getImageLayerOrder(right.item, right.index);
+      return layerDifference || (left.index - right.index);
+    });
+}
+
+function isPinnedPdfExampleImage(item) {
+  return item?.sourceTag === "pdf-clipboard";
 }
 
 function getVisibleSlideImages(pageIndex = 0) {
   return getImageEntriesForPage(pageIndex).map(({ item }) => item);
 }
 
+function getStageHasVisibleImagesForPage(pageIndex = state.previewPageIndex) {
+  return Boolean(getVisibleSlideImages(pageIndex).length);
+}
+
 function getDefaultSlideImagePanelArea() {
   return {
-    x: canvas.width - STAGE_RIGHT_CLEAR_GAP_PX + 26,
-    y: 148,
-    width: Math.max(160, STAGE_RIGHT_CLEAR_GAP_PX - 52),
-    height: 520,
+    x: STAGE_IMAGE_WORKSPACE_PADDING_PX,
+    y: STAGE_IMAGE_WORKSPACE_TOP_PX,
+    width: Math.max(240, canvas.width - (STAGE_IMAGE_WORKSPACE_PADDING_PX * 2)),
+    height: Math.max(220, canvas.height - STAGE_IMAGE_WORKSPACE_TOP_PX - STAGE_IMAGE_WORKSPACE_BOTTOM_PX),
     padding: 0,
     gap: 0,
     titleHeight: 0
+  };
+}
+
+function getPinnedPdfImageStripArea() {
+  const width = Math.min(STAGE_PDF_IMAGE_STRIP_WIDTH_PX, Math.max(180, canvas.width * 0.24));
+  return {
+    x: Math.max(STAGE_IMAGE_WORKSPACE_PADDING_PX, canvas.width - width - STAGE_IMAGE_WORKSPACE_PADDING_PX),
+    y: STAGE_TEXT_TOP_MARGIN_PX,
+    width,
+    height: Math.max(220, canvas.height - STAGE_TEXT_TOP_MARGIN_PX - STAGE_TEXT_BOTTOM_MARGIN_PX)
   };
 }
 
@@ -8366,15 +9640,22 @@ function normalizeImageFrame(item, fallbackIndex = 0) {
   const aspectRatio = item.aspectRatio || (item.image?.width && item.image?.height
     ? item.image.width / item.image.height
     : 4 / 3);
+  const freeResize = Boolean(item.freeResize);
+  const width = Math.max(STAGE_IMAGE_MIN_WIDTH_PX, Number.isFinite(item.width) ? item.width : 120);
+  const height = freeResize
+    ? Math.max(STAGE_IMAGE_MIN_HEIGHT_PX, Number.isFinite(item.height) ? item.height : (width / aspectRatio))
+    : (width / aspectRatio);
 
   return {
     ...item,
     pageIndex: getImagePageIndexForItem(item, fallbackIndex),
     aspectRatio,
+    zIndex: getImageLayerOrder(item, fallbackIndex),
     x: Number.isFinite(item.x) ? item.x : 0,
     y: Number.isFinite(item.y) ? item.y : 0,
-    width: Number.isFinite(item.width) ? item.width : 120,
-    height: Number.isFinite(item.height) ? item.height : (120 / aspectRatio)
+    width,
+    height,
+    freeResize
   };
 }
 
@@ -8396,13 +9677,13 @@ function rectanglesOverlap(left, right, margin = 12) {
 
 function getDefaultImageSizeForWorkspace(workspace, aspectRatio, pageCount) {
   const baseWidth = pageCount <= 1
-    ? workspace.width * 0.24
+    ? workspace.width * 0.26
     : pageCount === 2
-      ? workspace.width * 0.2
-      : workspace.width * 0.16;
-  const width = clamp(baseWidth, 120, 260);
+      ? workspace.width * 0.21
+      : workspace.width * 0.18;
+  const width = clamp(baseWidth, 140, 320);
   const maxWidth = Math.min(workspace.width - 24, workspace.height * aspectRatio);
-  const safeWidth = clamp(width, 100, Math.max(100, maxWidth));
+  const safeWidth = clamp(width, 120, Math.max(120, maxWidth));
 
   return {
     width: safeWidth,
@@ -8421,9 +9702,8 @@ function findOpenImagePosition(workspace, frame, occupiedFrames) {
     return safeFrame;
   }
 
-  const headerSafeY = Math.max(workspace.y, 132);
   const maxX = Math.max(workspace.x, workspace.x + workspace.width - frame.width);
-  const maxY = Math.max(headerSafeY, workspace.y + workspace.height - frame.height);
+  const maxY = Math.max(workspace.y, workspace.y + workspace.height - frame.height);
   const xCandidates = [];
   const yCandidates = [];
 
@@ -8434,7 +9714,7 @@ function findOpenImagePosition(workspace, frame, occupiedFrames) {
     xCandidates.push(workspace.x);
   }
 
-  for (let y = headerSafeY; y <= maxY; y += 42) {
+  for (let y = workspace.y; y <= maxY; y += 42) {
     yCandidates.push(y);
   }
   if (yCandidates[yCandidates.length - 1] !== maxY) {
@@ -8483,6 +9763,9 @@ function applyDefaultImageLayouts(images) {
 
     const preservedEntries = entries.filter(({ normalized }) => hasExplicitImageFrame(normalized));
     const newEntries = entries.filter(({ normalized }) => !hasExplicitImageFrame(normalized));
+    const pinnedStripArea = getPinnedPdfImageStripArea();
+    const pinnedEntries = newEntries.filter(({ normalized }) => isPinnedPdfExampleImage(normalized));
+    const regularEntries = newEntries.filter(({ normalized }) => !isPinnedPdfExampleImage(normalized));
     const occupiedFrames = [];
 
     preservedEntries.forEach((entry) => {
@@ -8491,14 +9774,43 @@ function applyDefaultImageLayouts(images) {
       occupiedFrames.push(clamped);
     });
 
-    newEntries.forEach((entry) => {
+    pinnedEntries.forEach((entry, pinnedIndex) => {
+      const maxWidth = Math.min(
+        pinnedStripArea.width,
+        workspace.width,
+        Math.max(STAGE_IMAGE_MIN_WIDTH_PX, pinnedStripArea.width - 8)
+      );
+      const preferredWidth = clamp(maxWidth, 150, 228);
+      const preferredHeight = entry.normalized.aspectRatio > 0
+        ? Math.max(STAGE_IMAGE_MIN_HEIGHT_PX, preferredWidth / entry.normalized.aspectRatio)
+        : preferredWidth;
+      const maxHeight = Math.max(STAGE_IMAGE_MIN_HEIGHT_PX, (pinnedStripArea.height - ((Math.max(0, pinnedEntries.length - 1)) * 16)) / Math.max(1, pinnedEntries.length));
+      const finalHeight = Math.min(preferredHeight, maxHeight);
+      const finalWidth = entry.normalized.aspectRatio > 0
+        ? Math.min(preferredWidth, finalHeight * entry.normalized.aspectRatio)
+        : preferredWidth;
+      const x = pinnedStripArea.x + Math.max(0, (pinnedStripArea.width - finalWidth));
+      const y = pinnedStripArea.y + (pinnedIndex * (finalHeight + 16));
+      const placed = clampImageFrame({
+        ...entry.normalized,
+        width: finalWidth,
+        height: finalHeight,
+        x,
+        y
+      }, entry.index);
+
+      positionedImages[entry.index] = placed;
+      occupiedFrames.push(placed);
+    });
+
+    regularEntries.forEach((entry) => {
       const size = getDefaultImageSizeForWorkspace(workspace, entry.normalized.aspectRatio, entries.length);
       const preferredStart = {
         ...entry.normalized,
         width: size.width,
         height: size.height,
-        x: workspace.x + workspace.width - size.width - 24,
-        y: Math.max(workspace.y + 24, 138)
+        x: workspace.x + Math.max(18, Math.min(workspace.width - size.width - 18, (workspace.width * 0.58) + ((occupiedFrames.length % 3) * 34))),
+        y: Math.max(workspace.y + 8, workspace.y + 8 + ((occupiedFrames.length % 4) * 34))
       };
       const placed = clampImageFrame(
         findOpenImagePosition(workspace, preferredStart, occupiedFrames),
@@ -8513,22 +9825,35 @@ function applyDefaultImageLayouts(images) {
   return positionedImages;
 }
 
-function clampImageFrame(item, fallbackIndex = 0) {
+function clampImageFrame(item, fallbackIndex = 0, options = {}) {
   const normalized = normalizeImageFrame(item, fallbackIndex);
   const workspace = getSlideImageWorkspace(normalized.pageIndex, true);
   if (!workspace) {
     return normalized;
   }
 
-  const minWidth = 64;
-  const maxWidth = Math.max(minWidth, Math.min(workspace.width, workspace.height * normalized.aspectRatio));
-  const width = clamp(normalized.width, minWidth, maxWidth);
-  const height = width / normalized.aspectRatio;
+  const freeResize = options.freeResize === true || normalized.freeResize;
+  const minWidth = STAGE_IMAGE_MIN_WIDTH_PX;
+  const minHeight = STAGE_IMAGE_MIN_HEIGHT_PX;
+
+  let width = normalized.width;
+  let height = normalized.height;
+
+  if (freeResize) {
+    width = clamp(width, minWidth, Math.max(minWidth, workspace.width));
+    height = clamp(height, minHeight, Math.max(minHeight, workspace.height));
+  } else {
+    const maxWidth = Math.max(minWidth, Math.min(workspace.width, workspace.height * normalized.aspectRatio));
+    width = clamp(width, minWidth, maxWidth);
+    height = width / normalized.aspectRatio;
+  }
+
   const maxX = workspace.x + workspace.width - width;
   const maxY = workspace.y + workspace.height - height;
 
   return {
     ...normalized,
+    freeResize,
     width,
     height,
     x: clamp(normalized.x, workspace.x, Math.max(workspace.x, maxX)),
@@ -8538,6 +9863,34 @@ function clampImageFrame(item, fallbackIndex = 0) {
 
 function syncImageLayouts() {
   state.images = state.images.map((item, index) => clampImageFrame(item, index));
+}
+
+function bringImageToFront(index) {
+  if (index < 0 || index >= state.images.length) {
+    return -1;
+  }
+
+  state.images[index] = {
+    ...state.images[index],
+    zIndex: getNextImageLayerOrder()
+  };
+  return index;
+}
+
+function getImageResizeHandles(box) {
+  // Corner handles keep resize hit-testing predictable across zoomed stage previews.
+  const handleSize = STAGE_IMAGE_HANDLE_SIZE_PX;
+  const halfHandle = handleSize / 2;
+  return [
+    { name: "nw", x: box.x - halfHandle, y: box.y - halfHandle, size: handleSize },
+    { name: "ne", x: box.x + box.width - halfHandle, y: box.y - halfHandle, size: handleSize },
+    { name: "sw", x: box.x - halfHandle, y: box.y + box.height - halfHandle, size: handleSize },
+    { name: "se", x: box.x + box.width - halfHandle, y: box.y + box.height - halfHandle, size: handleSize }
+  ];
+}
+
+function getResizeCursorForHandle(handleName = "") {
+  return /^(nw|se)$/i.test(handleName) ? "nwse-resize" : "nesw-resize";
 }
 
 function drawHeaderBackdrop() {
@@ -8890,22 +10243,32 @@ function drawOptionalImages(currentPageIndex = 0, totalPageCount = 1) {
       ctx.restore();
     }
 
-    const handleSize = 18;
-    const handleX = cellX + cellWidth - handleSize - 8;
-    const handleY = cellY + cellHeight - handleSize - 8;
+    const resizeHandles = getImageResizeHandles({
+      x: cellX,
+      y: cellY,
+      width: cellWidth,
+      height: cellHeight
+    });
+    const isSelected = interactivePreview && state.imageEditor.activeIndex === index;
+    const isHovered = interactivePreview && state.imageEditor.hoverIndex === index;
 
-    if (interactivePreview && state.imageEditor.activeIndex === index) {
+    if (isSelected || isHovered) {
       ctx.save();
-      ctx.strokeStyle = "#0d7ea9";
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = isSelected ? "#0d7ea9" : "rgba(13, 126, 169, 0.46)";
+      ctx.lineWidth = isSelected ? 4 : 2;
+      ctx.setLineDash(isSelected ? [] : [8, 6]);
       ctx.strokeRect(cellX - 2, cellY - 2, cellWidth + 4, cellHeight + 4);
-      drawRoundedRect(handleX, handleY, handleSize, handleSize, 6, "#0d7ea9");
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(handleX + 5, handleY + handleSize - 5);
-      ctx.lineTo(handleX + handleSize - 5, handleY + 5);
-      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (isSelected) {
+        resizeHandles.forEach((handle) => {
+          ctx.fillStyle = state.imageEditor.activeHandle === handle.name ? "#0d7ea9" : "#ffffff";
+          ctx.strokeStyle = "#0d7ea9";
+          ctx.lineWidth = 2;
+          drawRoundedRect(handle.x, handle.y, handle.size, handle.size, 6, ctx.fillStyle);
+          ctx.strokeRect(handle.x + 1, handle.y + 1, handle.size - 2, handle.size - 2);
+        });
+      }
       ctx.restore();
     }
 
@@ -8915,9 +10278,7 @@ function drawOptionalImages(currentPageIndex = 0, totalPageCount = 1) {
       y: cellY,
       width: cellWidth,
       height: cellHeight,
-      handleX,
-      handleY,
-      handleSize
+      handles: resizeHandles
     });
   });
 
@@ -8976,8 +10337,8 @@ function drawPdfContextScene() {
 
   drawInfoKidsLogo();
 
-  const contentArea = getStageContentArea(currentPageIndex, true);
-  const hasSideImages = Boolean(getVisibleSlideImages(currentPageIndex).length);
+  const hasSideImages = getStageHasVisibleImagesForPage(currentPageIndex);
+  const contentArea = getStageContentArea(currentPageIndex, hasSideImages);
   const visibleText = getPdfContextVisibleText(currentPage, currentPageIndex);
   const layout = getContentLayoutWithMetrics(
     buildDisplayedLines(visibleText),
@@ -9134,7 +10495,7 @@ function drawPdfScene() {
 }
 
 function drawScene(mouthOpen = 0.12) {
-  if (state.introPlayback.active && state.introPlayback.element) {
+  if ((state.introPlayback.active || state.introPlayback.previewVisible) && state.introPlayback.element) {
     drawIntroScene();
     drawRuntimeDisplayErrorOverlay();
     requestCanvasExportFrame();
@@ -9160,19 +10521,32 @@ function drawScene(mouthOpen = 0.12) {
   const isAnimatingContent = state.speaking || (state.displayedText && state.displayedText !== state.text);
   const boardSourceText = isAnimatingContent ? (state.displayedText || state.text) : state.text;
   const boardData = getMathPlaceValueBoardData(boardSourceText) || (isAnimatingContent ? getMathPlaceValueBoardData(state.text) : null);
-  const previewPageHasImages = Boolean(getVisibleSlideImages(state.previewPageIndex).length);
-  const fullContent = getPaginatedSlideContent(
+  const textOnlyContent = getPaginatedSlideContent(
     state.text,
     !state.text,
     state.previewPageIndex,
-    !isAnimatingContent ? previewPageHasImages : (state.images.length > 0)
+    false
+  );
+  const predictedAnimatedPageIndex = isAnimatingContent
+    ? clamp(
+      getStableAnimatedPageIndex(textOnlyContent, state.displayedText),
+      0,
+      Math.max(0, Math.max(textOnlyContent.pageCount, state.images.length ? getImagePageCount() : 1) - 1)
+    )
+    : clamp(state.previewPageIndex, 0, Math.max(0, Math.max(textOnlyContent.pageCount, state.images.length ? getImagePageCount() : 1) - 1));
+  const currentPageHasImages = getStageHasVisibleImagesForPage(predictedAnimatedPageIndex);
+  const fullContent = getPaginatedSlideContent(
+    state.text,
+    !state.text,
+    predictedAnimatedPageIndex,
+    currentPageHasImages
   );
   const activeContent = isAnimatingContent
     ? getPaginatedSlideContent(
       state.displayedText,
       !state.text,
-      state.previewPageIndex,
-      state.images.length > 0
+      predictedAnimatedPageIndex,
+      currentPageHasImages
     )
     : fullContent;
   const contentArea = fullContent.contentArea;
@@ -9325,6 +10699,38 @@ function loadImageFromDataUrl(dataUrl) {
     image.onerror = () => reject(new Error("One of the selected images could not be loaded."));
     image.src = dataUrl;
   });
+}
+
+async function addStageImagesFromDataUrls(imageItems = [], options = {}) {
+  const existingImages = [...state.images];
+  const targetPageIndex = Number.isInteger(options.targetPageIndex)
+    ? Math.max(0, options.targetPageIndex)
+    : (stagePanel.classList.contains("hidden") ? 0 : state.previewPageIndex);
+  const remainingSlots = Math.max(0, MAX_IMAGE_UPLOADS - existingImages.length);
+  const itemsToLoad = imageItems
+    .filter((item) => item && typeof item.dataUrl === "string" && item.dataUrl.startsWith("data:image/"))
+    .slice(0, remainingSlots || MAX_IMAGE_UPLOADS);
+
+  if (!itemsToLoad.length) {
+    return 0;
+  }
+
+  const loadedImages = await Promise.all(
+    itemsToLoad.map(async (item, index) => ({
+      fileName: item.fileName || `pasted-example-${Date.now()}-${index + 1}.png`,
+      dataUrl: item.dataUrl,
+      image: await loadImageFromDataUrl(item.dataUrl),
+      sourceTag: item.sourceTag || "pdf-clipboard",
+      pageIndex: Number.isInteger(item.pageIndex) ? Math.max(0, item.pageIndex) : undefined
+    }))
+  );
+
+  const pageAssignedImages = assignPageIndexesToNewImages(existingImages, loadedImages, targetPageIndex);
+  state.images = applyDefaultImageLayouts([...existingImages, ...pageAssignedImages]);
+  state.imageEditor.activeIndex = state.images.length ? state.images.length - 1 : -1;
+  renderImagePreviews();
+  drawScene(state.mouthOpen);
+  return pageAssignedImages.length;
 }
 
 function readFileAsDataUrl(file) {
@@ -9592,7 +10998,11 @@ function renderStageVideoPreviewList() {
   videoPreviewList.innerHTML = "";
 
   if (!state.stageVideos.length) {
-    videoPreviewList.classList.add("hidden");
+    renderMediaEmptyState(
+      videoPreviewList,
+      "No stage videos yet",
+      "Upload a stage video when you want motion behind the lesson. The active video can still be managed from the presentation screen."
+    );
     updateStageMediaToolUi();
     return;
   }
@@ -9704,6 +11114,12 @@ async function ensureDefaultIntroClip() {
       loop: false,
       errorMessage: "The default intro clip could not be loaded."
     });
+    introElement.pause();
+    try {
+      introElement.currentTime = 0;
+    } catch (error) {
+      console.error(error);
+    }
     introElement.volume = STRICT_VOICE_VOLUME;
     introElement.muted = false;
     state.introPlayback.element = introElement;
@@ -9798,6 +11214,7 @@ async function playIntroClipIfEnabled() {
   }
 
   const introElement = state.introPlayback.element;
+  state.introPlayback.previewVisible = false;
   state.introPlayback.active = true;
   state.mouthOpen = 0.12;
   updatePlaybackProgressUi(0, true);
@@ -9869,6 +11286,7 @@ async function playIntroClipForExport() {
   }
 
   const introElement = state.introPlayback.element;
+  state.introPlayback.previewVisible = false;
   state.introPlayback.active = true;
   state.mouthOpen = 0.12;
   updatePlaybackProgressUi(0, true);
@@ -9887,70 +11305,47 @@ async function playIntroClipForExport() {
       return false;
     }
 
-    const frameRate = Math.max(1, getLessonExportCaptureRate());
-    const frameDurationMs = Math.max(24, Math.round(1000 / frameRate));
-    const frameCount = Math.max(1, Math.ceil(duration * frameRate));
-    const seekToTime = (timeSeconds) => new Promise((resolve, reject) => {
-      const safeTarget = clamp(timeSeconds, 0, Math.max(0, duration - 0.04));
-      if (Math.abs((introElement.currentTime || 0) - safeTarget) < 0.02) {
-        resolve();
-        return;
-      }
-
-      let settled = false;
+    const introFinished = new Promise((resolve, reject) => {
       const cleanup = () => {
-        introElement.removeEventListener("seeked", handleSeeked);
+        introElement.removeEventListener("ended", handleEnded);
         introElement.removeEventListener("error", handleError);
-        window.clearTimeout(timeoutId);
       };
-      const handleSeeked = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
+      const handleEnded = () => {
         cleanup();
         resolve();
       };
       const handleError = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
         cleanup();
         reject(new Error("The intro clip could not be rendered during export."));
       };
-      const timeoutId = window.setTimeout(() => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        resolve();
-      }, 1200);
-
-      introElement.addEventListener("seeked", handleSeeked, { once: true });
+      introElement.addEventListener("ended", handleEnded, { once: true });
       introElement.addEventListener("error", handleError, { once: true });
-      try {
-        introElement.currentTime = safeTarget;
-      } catch (error) {
-        settled = true;
-        cleanup();
-        reject(error);
-      }
     });
 
-    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-      const timeSeconds = Math.min(frameIndex / frameRate, Math.max(0, duration - 0.04));
-      await seekToTime(timeSeconds);
-      updatePlaybackProgressUi(clamp(timeSeconds / duration, 0, 1), true);
+    const tick = () => {
+      if (!state.introPlayback.active) {
+        return;
+      }
+
+      const progress = clamp((introElement.currentTime || 0) / duration, 0, 1);
+      updatePlaybackProgressUi(progress, true);
       drawScene(0.12);
-      await delay(frameDurationMs);
+
+      if (!introElement.paused && !introElement.ended) {
+        requestAnimationFrame(tick);
+      }
+    };
+
+    const started = await playVideoWithAutoplayRecovery(introElement, { muted: true, volume: 0 });
+    if (!started) {
+      throw new Error("The intro clip could not be played during export.");
     }
 
-    await seekToTime(Math.max(0, duration - 0.04));
+    requestAnimationFrame(tick);
+    await introFinished;
     updatePlaybackProgressUi(1, true);
     drawScene(0.12);
-    await delay(frameDurationMs);
+    await delay(80);
     return true;
   } finally {
     state.introPlayback.active = false;
@@ -9973,7 +11368,7 @@ async function renderNarrationTimelineForExport(durationMs, playbackRate = getLe
     : 1;
   const frameRate = Math.max(1, getLessonExportCaptureRate());
   const frameDurationMs = Math.max(24, Math.round(1000 / frameRate));
-  const narrationTimelineMs = Math.max(1, Math.round(safeDurationMs * safePlaybackRate));
+  const narrationTimelineMs = Math.max(1, Math.round(safeDurationMs / safePlaybackRate));
   const startedAt = performance.now();
 
   state.displayedText = "";
@@ -9983,8 +11378,8 @@ async function renderNarrationTimelineForExport(durationMs, playbackRate = getLe
 
   while (true) {
     const elapsedMs = performance.now() - startedAt;
-    const progress = clamp(elapsedMs / safeDurationMs, 0, 1);
-    const syncFrame = getSpeechSyncFrame(state.text, elapsedMs, safeDurationMs);
+    const progress = clamp(elapsedMs / narrationTimelineMs, 0, 1);
+    const syncFrame = getSpeechSyncFrame(state.text, elapsedMs, narrationTimelineMs);
     state.displayedText = syncFrame.displayedText;
     syncLessonPlaybackProgressUi(progress, true);
     updateTaskProgressUi(0.26 + (progress * 0.54), true, { mirrorStage: true });
@@ -10143,9 +11538,9 @@ function resetStageVideoState() {
 function getStageVideoDrawArea() {
   return {
     x: 0,
-    y: 132,
+    y: STAGE_IMAGE_WORKSPACE_TOP_PX,
     width: canvas.width,
-    height: canvas.height - 132
+    height: canvas.height - STAGE_IMAGE_WORKSPACE_TOP_PX
   };
 }
 
@@ -10708,7 +12103,7 @@ function removeImageAt(index) {
   state.imageRenderBoxes = [];
   previewCanvas.style.cursor = "default";
 
-  const contentPageCount = getPaginatedSlideContent(state.text, !state.text).pageCount;
+  const contentPageCount = getPaginatedSlideContent(state.text, !state.text, state.previewPageIndex, false).pageCount;
   const maxPageIndex = Math.max(
     0,
     Math.max(contentPageCount, getImagePageCount()) - 1
@@ -10818,13 +12213,13 @@ function updateStageMediaToolUi() {
     if (isPdfPresentationMode()) {
       setStageMediaStatus("Media removal is disabled while the PDF context is active.");
     } else if (selectedImage) {
-      setStageMediaStatus(`${selectedImage.fileName} is selected. Remove it here, or drag it in the right-side media area.`);
+      setStageMediaStatus(`${selectedImage.fileName} is selected on page ${getImagePageIndexForItem(selectedImage, imageIndex) + 1}. Drag it anywhere on the full slide, use the corner handles to resize, and hold Shift for free resize.`);
     } else if (activeVideo) {
       setStageMediaStatus(`${activeVideo.fileName} is active on the screen. You can remove it here.`);
     } else if (state.images.length) {
-      setStageMediaStatus("Select an image on the screen to remove it here.");
+      setStageMediaStatus("Select an image on the screen to move or resize it across the full slide.");
     } else {
-      setStageMediaStatus("Upload media, then manage removals from this presentation panel.");
+      setStageMediaStatus("Upload media, then place images anywhere on the presentation screen from this panel.");
     }
   }
 }
@@ -10834,8 +12229,10 @@ function selectImageAt(index, options = {}) {
     return;
   }
 
-  state.imageEditor.activeIndex = index;
-  const targetPageIndex = getImagePageIndexForItem(state.images[index], index);
+  const activeIndex = options.bringToFront === false ? index : bringImageToFront(index);
+  state.imageEditor.activeIndex = activeIndex;
+  state.imageEditor.activeHandle = "";
+  const targetPageIndex = getImagePageIndexForItem(state.images[activeIndex], activeIndex);
   if (options.moveToPage !== false) {
     state.previewPageIndex = targetPageIndex;
   }
@@ -10962,7 +12359,9 @@ function assignPageIndexesToNewImages(existingImages, loadedImages, startPageInd
   });
 
   return loadedImages.map((item) => {
-    let targetPageIndex = Math.max(0, startPageIndex);
+    let targetPageIndex = Number.isInteger(item?.pageIndex)
+      ? Math.max(0, item.pageIndex)
+      : Math.max(0, startPageIndex);
 
     while ((pageCounts.get(targetPageIndex) || 0) >= SLIDE_IMAGES_PER_PAGE) {
       targetPageIndex += 1;
@@ -10977,11 +12376,38 @@ function assignPageIndexesToNewImages(existingImages, loadedImages, startPageInd
   });
 }
 
+function renderMediaEmptyState(container, title, message) {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = "";
+  const card = document.createElement("div");
+  card.className = "media-empty-state";
+
+  const heading = document.createElement("p");
+  heading.className = "media-empty-title";
+  heading.textContent = title;
+
+  const body = document.createElement("p");
+  body.className = "media-empty-copy";
+  body.textContent = message;
+
+  card.appendChild(heading);
+  card.appendChild(body);
+  container.appendChild(card);
+  container.classList.remove("hidden");
+}
+
 function renderImagePreviewsLegacy() {
   imagePreviewList.innerHTML = "";
 
   if (!state.images.length) {
-    imagePreviewList.classList.add("hidden");
+    renderMediaEmptyState(
+      imagePreviewList,
+      "No stage images yet",
+      "Upload lesson images here. On the presentation screen you can select them, drag them anywhere on the full slide, and resize them from the corner handles."
+    );
     setImageCutoutStatus("Smart cutout is ready for new image uploads.");
     updateStageMediaToolUi();
     return;
@@ -11015,7 +12441,11 @@ function renderImagePreviews() {
   imagePreviewList.innerHTML = "";
 
   if (!state.images.length) {
-    imagePreviewList.classList.add("hidden");
+    renderMediaEmptyState(
+      imagePreviewList,
+      "No stage images yet",
+      "Upload lesson images here. On the presentation screen you can select them, drag them anywhere on the full slide, and resize them from the corner handles."
+    );
     setImageCutoutStatus("Smart cutout is ready for new image uploads.");
     updateStageMediaToolUi();
     return;
@@ -11084,7 +12514,7 @@ function renderImagePreviews() {
 
     card.addEventListener("click", () => {
       selectImageAt(index);
-      setImageCutoutStatus(`${item.fileName} is selected. Use Remove BG, Restore, or Show Here.`);
+      setImageCutoutStatus(`${item.fileName} is selected. Use Remove BG, Restore, or Show Here, then drag it anywhere on the slide.`);
     });
 
     card.appendChild(img);
@@ -11113,13 +12543,15 @@ function getCanvasPoint(event) {
 function getImageHitTarget(point) {
   for (let index = state.imageRenderBoxes.length - 1; index >= 0; index -= 1) {
     const box = state.imageRenderBoxes[index];
-    const insideHandle = point.x >= box.handleX
-      && point.x <= box.handleX + box.handleSize
-      && point.y >= box.handleY
-      && point.y <= box.handleY + box.handleSize;
+    const matchingHandle = (box.handles || []).find((handle) => (
+      point.x >= handle.x
+      && point.x <= handle.x + handle.size
+      && point.y >= handle.y
+      && point.y <= handle.y + handle.size
+    ));
 
-    if (insideHandle) {
-      return { index: box.index, mode: "resize" };
+    if (matchingHandle) {
+      return { index: box.index, mode: "resize", handle: matchingHandle.name };
     }
 
     const insideBox = point.x >= box.x
@@ -11167,6 +12599,7 @@ function updateCanvasCursor(point) {
     previewCanvas.style.cursor = "default";
     state.imageEditor.hoverIndex = -1;
     state.imageEditor.hoverMode = "";
+    state.imageEditor.activeHandle = "";
     state.stageVideoEditor.hoverMode = "";
     return;
   }
@@ -11177,8 +12610,9 @@ function updateCanvasCursor(point) {
   state.stageVideoEditor.hoverMode = videoHit?.mode || "";
   state.imageEditor.hoverIndex = imageHit ? imageHit.index : -1;
   state.imageEditor.hoverMode = imageHit ? imageHit.mode : "";
+  state.imageEditor.activeHandle = imageHit?.handle || "";
   previewCanvas.style.cursor = hitMode === "resize"
-    ? "nwse-resize"
+    ? getResizeCursorForHandle(imageHit?.handle || "se")
     : hitMode === "drag"
       ? "move"
       : "default";
@@ -11228,6 +12662,8 @@ function beginImageInteraction(event) {
   if (!hit) {
     if (state.imageEditor.activeIndex !== -1) {
       state.imageEditor.activeIndex = -1;
+      renderImagePreviews();
+      updateStageMediaToolUi();
       drawScene(state.mouthOpen);
     }
     updateCanvasCursor(point);
@@ -11236,20 +12672,28 @@ function beginImageInteraction(event) {
 
   const image = clampImageFrame(state.images[hit.index], hit.index);
   state.images[hit.index] = image;
+  const activeIndex = bringImageToFront(hit.index);
+  const activeImage = clampImageFrame(state.images[activeIndex], activeIndex);
+  state.images[activeIndex] = activeImage;
   state.imageEditor = {
     ...state.imageEditor,
-    activeIndex: hit.index,
-    hoverIndex: hit.index,
+    activeIndex,
+    hoverIndex: activeIndex,
     hoverMode: hit.mode,
+    activeHandle: hit.handle || "",
     mode: hit.mode,
     pointerId: event.pointerId,
     startPointerX: point.x,
     startPointerY: point.y,
-    startX: image.x,
-    startY: image.y,
-    startWidth: image.width,
-    startHeight: image.height
+    startX: activeImage.x,
+    startY: activeImage.y,
+    startWidth: activeImage.width,
+    startHeight: activeImage.height,
+    startAspectRatio: activeImage.aspectRatio
   };
+
+  renderImagePreviews();
+  updateStageMediaToolUi();
 
   if (typeof previewCanvas.setPointerCapture === "function") {
     try {
@@ -11334,27 +12778,69 @@ function moveImageInteraction(event) {
       y: editor.startY + dy
     }, editor.activeIndex);
   } else if (editor.mode === "resize") {
-    const aspectRatio = image.aspectRatio;
-    const widthFromX = editor.startWidth + dx;
-    const widthFromY = editor.startWidth + (dy * aspectRatio);
-    const widthDelta = Math.abs(widthFromX - editor.startWidth) >= Math.abs(widthFromY - editor.startWidth)
-      ? (widthFromX - editor.startWidth)
-      : (widthFromY - editor.startWidth);
-    const requestedWidth = editor.startWidth + widthDelta;
-    const maxWidth = Math.min(
-      workspace.x + workspace.width - editor.startX,
-      (workspace.y + workspace.height - editor.startY) * aspectRatio
-    );
+    const aspectRatio = editor.startAspectRatio || image.aspectRatio || 1;
+    const freeResize = event.shiftKey === true;
+    const handle = editor.activeHandle || "se";
+    const workspaceRight = workspace.x + workspace.width;
+    const workspaceBottom = workspace.y + workspace.height;
+    const startRight = editor.startX + editor.startWidth;
+    const startBottom = editor.startY + editor.startHeight;
 
-    state.images[editor.activeIndex] = clampImageFrame({
-      ...image,
-      x: editor.startX,
-      y: editor.startY,
-      width: clamp(requestedWidth, 72, Math.max(72, maxWidth)),
-      height: clamp(requestedWidth, 72, Math.max(72, maxWidth)) / aspectRatio
-    }, editor.activeIndex);
+    if (freeResize) {
+      let left = /w/.test(handle) ? editor.startX + dx : editor.startX;
+      let top = /n/.test(handle) ? editor.startY + dy : editor.startY;
+      let right = /e/.test(handle) ? startRight + dx : startRight;
+      let bottom = /s/.test(handle) ? startBottom + dy : startBottom;
+
+      if (/w/.test(handle)) {
+        left = clamp(left, workspace.x, startRight - STAGE_IMAGE_MIN_WIDTH_PX);
+      }
+      if (/n/.test(handle)) {
+        top = clamp(top, workspace.y, startBottom - STAGE_IMAGE_MIN_HEIGHT_PX);
+      }
+      if (/e/.test(handle)) {
+        right = clamp(right, editor.startX + STAGE_IMAGE_MIN_WIDTH_PX, workspaceRight);
+      }
+      if (/s/.test(handle)) {
+        bottom = clamp(bottom, editor.startY + STAGE_IMAGE_MIN_HEIGHT_PX, workspaceBottom);
+      }
+
+      state.images[editor.activeIndex] = clampImageFrame({
+        ...image,
+        x: left,
+        y: top,
+        width: Math.max(STAGE_IMAGE_MIN_WIDTH_PX, right - left),
+        height: Math.max(STAGE_IMAGE_MIN_HEIGHT_PX, bottom - top),
+        freeResize: true
+      }, editor.activeIndex, { freeResize: true });
+    } else {
+      const anchorX = /w/.test(handle) ? startRight : editor.startX;
+      const anchorY = /n/.test(handle) ? startBottom : editor.startY;
+      const pointerWidth = Math.abs(point.x - anchorX);
+      const pointerHeight = Math.abs(point.y - anchorY);
+      const requestedWidth = Math.max(pointerWidth, pointerHeight * aspectRatio);
+      const maxWidth = /w/.test(handle)
+        ? /n/.test(handle)
+          ? Math.min(anchorX - workspace.x, (anchorY - workspace.y) * aspectRatio)
+          : Math.min(anchorX - workspace.x, (workspaceBottom - anchorY) * aspectRatio)
+        : /n/.test(handle)
+          ? Math.min(workspaceRight - anchorX, (anchorY - workspace.y) * aspectRatio)
+          : Math.min(workspaceRight - anchorX, (workspaceBottom - anchorY) * aspectRatio);
+      const width = clamp(requestedWidth, STAGE_IMAGE_MIN_WIDTH_PX, Math.max(STAGE_IMAGE_MIN_WIDTH_PX, maxWidth));
+      const height = width / aspectRatio;
+
+      state.images[editor.activeIndex] = clampImageFrame({
+        ...image,
+        x: /w/.test(handle) ? anchorX - width : anchorX,
+        y: /n/.test(handle) ? anchorY - height : anchorY,
+        width,
+        height,
+        freeResize: false
+      }, editor.activeIndex);
+    }
   }
 
+  updateStageMediaToolUi();
   event.preventDefault();
   drawScene(state.mouthOpen);
 }
@@ -11375,10 +12861,13 @@ function endImageInteraction(event) {
 
   state.imageEditor.mode = "";
   state.imageEditor.pointerId = null;
+  state.imageEditor.activeHandle = "";
   state.stageVideoEditor.mode = "";
   state.stageVideoEditor.pointerId = null;
   syncImageLayouts();
   updateCanvasCursor(event ? getCanvasPoint(event) : null);
+  renderImagePreviews();
+  updateStageMediaToolUi();
   drawScene(state.mouthOpen);
 }
 
@@ -11462,6 +12951,7 @@ function stopPlayback(restoreFullText = true) {
     }
   }
   state.introPlayback.active = false;
+  state.introPlayback.previewVisible = false;
   stopActiveAudio();
   state.speechUtterance = null;
   state.speaking = false;
@@ -11514,6 +13004,7 @@ function finishPlayback(message) {
     }
   }
   state.introPlayback.active = false;
+  state.introPlayback.previewVisible = false;
   stopActiveAudio();
   state.speechUtterance = null;
   state.speaking = false;
@@ -11825,8 +13316,7 @@ async function playNarrationAudio() {
     }
 
     const audioElement = await createLoadedAudio(state.narration.url);
-    audioElement.playbackRate = getLessonPlaybackRate();
-    audioElement.preservesPitch = false;
+    applyNaturalVoicePlayback(audioElement, getLessonPlaybackRate());
     audioElement.muted = false;
     audioElement.volume = STRICT_VOICE_VOLUME;
     state.activeAudio = audioElement;
@@ -11853,15 +13343,7 @@ async function playNarrationAudio() {
   } catch (error) {
     console.error(error);
     finishPlayback(error.message || "Narration playback failed.");
-    if (state.text) {
-      window.setTimeout(() => {
-        try {
-          playSpeechFallback();
-        } catch (fallbackError) {
-          console.error(fallbackError);
-        }
-      }, 120);
-    }
+    setStatus("Generated Anjali playback failed. The app did not switch to another voice. Generate Anjali narration again or restart the local Anjali voice server on port 8426.");
   }
 }
 
@@ -11933,30 +13415,37 @@ function playSpeechFallback() {
   window.speechSynthesis.speak(utterance);
 }
 
+function hasFreshGeneratedAnjaliNarration(currentText = "") {
+  const safeText = String(currentText || "").trim();
+  return Boolean(
+    state.narration.url
+    && state.narration.blob
+    && state.narration.voice === "anjali"
+    && state.narration.textSource === safeText
+    && /generated anjali narration/i.test(state.narration.source || "")
+  );
+}
+
 async function ensureNarrationReadyForSlide(options = {}) {
   const currentText = commitLatestLessonText();
-  if (
-    state.narration.url
-    && (
-      !state.narration.textSource
-      || (
-        state.narration.textSource === currentText
-        && (!state.narration.voice || state.narration.voice === state.preferredNarrationVoice)
-      )
-    )
-    && !(
-      state.preferredNarrationVoice === "anjali"
-      && (!state.narration.blob || state.narration.voice !== "anjali")
-    )
-  ) {
+  if (hasFreshGeneratedAnjaliNarration(currentText)) {
     return;
   }
 
   const voice = "anjali";
   const label = `Generated ${getNarrationVoiceLabel(voice).toLowerCase()} narration`;
   const fileName = `generated-${voice}-narration.wav`;
-  const blob = await requestNarrationBlob(currentText, voice, options);
-  await setNarrationFromBlob(blob, fileName, label, currentText, voice);
+  let syncProfile = null;
+  const blob = await requestNarrationBlob(currentText, voice, {
+    ...options,
+    onSyncProfile: (profile) => {
+      syncProfile = profile;
+      if (typeof options.onSyncProfile === "function") {
+        options.onSyncProfile(profile);
+      }
+    }
+  });
+  await setNarrationFromBlob(blob, fileName, label, currentText, voice, { syncProfile });
 }
 
 async function playSlide() {
@@ -11983,20 +13472,7 @@ async function playSlide() {
   stopDictation(false);
   stopInputPreview(false);
 
-  const canReuseExistingNarration = Boolean(
-    state.narration.url
-    && (
-      !state.narration.textSource
-      || (
-        state.narration.textSource === currentText
-        && (!state.narration.voice || state.narration.voice === state.preferredNarrationVoice)
-      )
-    )
-    && !(
-      state.preferredNarrationVoice === "anjali"
-      && (!state.narration.blob || state.narration.voice !== "anjali")
-    )
-  );
+  const canReuseExistingNarration = hasFreshGeneratedAnjaliNarration(currentText);
 
   if (canReuseExistingNarration) {
     await playIntroClipIfEnabled();
@@ -12007,18 +13483,18 @@ async function playSlide() {
   try {
     setStatus("Preparing narration for live playback...");
     updateTaskProgressUi(0.2, true, { mirrorStage: true });
-    const narrationPromise = ensureNarrationReadyForSlide({
+    await ensureNarrationReadyForSlide({
       timeoutMs: getLongNarrationRequestTimeoutMs(currentText)
     });
+    updateTaskProgressUi(0.62, true, { mirrorStage: true, label: state.introPlayback.enabled ? "Narration ready. Playing intro clip..." : "Narration ready. Starting playback..." });
     await playIntroClipIfEnabled();
-    await narrationPromise;
     updateTaskProgressUi(0.88, true, { mirrorStage: true });
     resetTaskProgressUi();
     playNarrationAudio();
   } catch (error) {
     console.error(error);
     resetTaskProgressUi();
-    setStatus("The Anjali clone server is unavailable, so cloned playback could not start. Start the local Anjali server on port 8426 and try again.");
+    setStatus("The Anjali voice server is unavailable, so playback could not start. Start the local Anjali voice server on port 8426 and try again.");
     return;
   }
 }
@@ -12059,7 +13535,7 @@ async function startTextPreview(voicePreference) {
     console.error(error);
   }
 
-  setSpeechToolsStatus(`${voiceLabel} voice preview needs the local clone server on port 8426.`);
+  setSpeechToolsStatus(`${voiceLabel} voice preview needs the local Anjali voice server on port 8426.`);
   updateSpeechToolsUi();
 }
 
@@ -12209,9 +13685,7 @@ async function exportPdfModeVideo(renderMode = "context") {
     if (pdfText) {
       try {
         updateTaskProgressUi(0.18, true, { mirrorStage: true });
-        exportAudioBlob = await ensureAnjaliPdfNarrationReadyForExport({
-          timeoutMs: getLongNarrationRequestTimeoutMs(pdfText)
-        });
+        exportAudioBlob = await ensureAnjaliPdfNarrationReadyForExport();
         exportAudioFileName = state.pdf.narration.fileName || exportAudioFileName;
         audioStatusLabel = "Anjali narration";
       } catch (error) {
@@ -12255,8 +13729,7 @@ async function exportPdfModeVideo(renderMode = "context") {
     if (normalizedRenderMode === "context" && state.pdf.narration.url) {
       exportNarrationAudio = await createLoadedAudio(state.pdf.narration.url);
       exportNarrationAudio.currentTime = 0;
-      exportNarrationAudio.playbackRate = getPdfPlaybackRate();
-      exportNarrationAudio.preservesPitch = false;
+      applyNaturalVoicePlayback(exportNarrationAudio, getPdfPlaybackRate());
       exportNarrationAudio.muted = true;
       exportNarrationAudio.volume = 0;
       state.activeAudio = exportNarrationAudio;
@@ -12388,8 +13861,8 @@ async function exportPdfModeVideo(renderMode = "context") {
   } catch (error) {
     console.error(error);
     const errorMessage = error?.message || "unknown error";
-    if (/Anjali clone server/i.test(errorMessage)) {
-      setStatus(`PDF export failed: ${errorMessage} Start the Anjali clone server on port 8426, then export again.`);
+    if (/Anjali (clone )?server|local Anjali voice server|local narration server/i.test(errorMessage)) {
+      setStatus(`PDF export failed: ${errorMessage} Start the local Anjali voice server on port 8426, then export again.`);
     } else {
       const recoveryHint = normalizedRenderMode === "exact"
         ? " Try Download PDF Context Video if the full exact-PDF export is still too large."
@@ -12467,7 +13940,7 @@ async function exportVideo() {
   stopPlayback(false);
   forceExportVoiceToAnjali();
   state.exportingVideo = true;
-  const exportPlaybackRate = 1;
+  const exportPlaybackRate = getLessonPlaybackRate();
   const effectiveExportQuality = getEffectiveExportQuality();
   const exportQualityLabel = getExportQualityLabel(effectiveExportQuality);
   const shouldIncludeIntro = Boolean(state.introPlayback.enabled);
@@ -12610,10 +14083,10 @@ async function exportVideo() {
     let audioBlob = exportNarrationBlob;
     let audioFileName = "lesson-export-audio.wav";
     if (includedIntroInExport) {
-      const introAudioBlob = createSilentWavBlob(state.introPlayback.durationMs || 1000);
-
       try {
+        const introAudioBlob = await getIntroExportBlob();
         audioBlob = await combineNarrationBlobs([introAudioBlob, exportNarrationBlob]);
+        setIntroClipStatus("The intro clip and its audio will be included before the Anjali lesson narration.");
       } catch (error) {
         console.error(error);
         audioBlob = await combineNarrationBlobs([
@@ -12622,7 +14095,6 @@ async function exportVideo() {
         ]);
         setIntroClipStatus("The intro video exported, but its audio could not be merged cleanly, so the export used silent intro audio.");
       }
-      setIntroClipStatus("The intro clip stays in the export as visuals, and the spoken export voice stays Anjali.");
       audioFileName = "intro-and-lesson-audio.wav";
     }
     let videoSaveHandle = null;
@@ -12643,7 +14115,7 @@ async function exportVideo() {
     updateTaskProgressUi(0.9, true, { mirrorStage: true, label: combiningVideoExportMessage });
     const finalBlob = await muxVideoAndAudio(videoBlob, audioBlob, {
       audioFileName,
-      audioSpeed: 1,
+      audioSpeed: exportPlaybackRate,
       saveHandle: videoSaveHandle
     });
     if (!videoSaveHandle && (!finalBlob || !finalBlob.size)) {
@@ -12661,8 +14133,8 @@ async function exportVideo() {
   } catch (error) {
     console.error(error);
     const errorMessage = error?.message || "unknown error";
-    if (/Anjali clone server/i.test(errorMessage)) {
-      setStatus(`Video export failed: ${errorMessage} Start the Anjali clone server on port 8426, then export again.`);
+    if (/Anjali (clone )?server|local Anjali voice server|local narration server/i.test(errorMessage)) {
+      setStatus(`Video export failed: ${errorMessage} Start the local Anjali voice server on port 8426, then export again.`);
     } else {
       setStatus(`Video export failed: ${errorMessage}.`);
     }
@@ -12685,6 +14157,7 @@ async function exportVideo() {
     state.speaking = false;
     state.mouthOpen = 0.12;
     state.introPlayback.active = false;
+    state.introPlayback.previewVisible = false;
     if (state.introPlayback.element) {
       state.introPlayback.element.pause();
       try {
@@ -12728,6 +14201,9 @@ async function setNarrationFromBlob(blob, fileName, sourceLabel, textSource = ""
       : getDefaultNarrationDurationMs();
 
     resetNarrationState();
+    const syncProfile = options.syncProfile
+      ? scaleSpeechSyncProfile(options.syncProfile, durationMs)
+      : null;
     state.narration = {
       url: nextUrl,
       fileName,
@@ -12735,7 +14211,13 @@ async function setNarrationFromBlob(blob, fileName, sourceLabel, textSource = ""
       source: sourceLabel,
       blob,
       textSource,
-      voice
+      voice,
+      syncProfile: syncProfile
+        ? {
+          text: textSource,
+          profile: syncProfile
+        }
+        : null
     };
 
     updateNarrationUi();
@@ -12788,14 +14270,190 @@ async function handleImageSelection(event) {
     drawScene(state.mouthOpen);
     setStatus(
       (existingImages.length + selectedFiles.length) > MAX_IMAGE_UPLOADS
-        ? `Loaded up to ${MAX_IMAGE_UPLOADS} images. New images were placed in the right-side media area for page ${targetPageIndex + 1}.`
-        : `Images were added to page ${targetPageIndex + 1} and placed in the right-side media area.`
+        ? `Loaded up to ${MAX_IMAGE_UPLOADS} images. New images were placed on page ${targetPageIndex + 1} and can now be dragged anywhere on the full slide.`
+        : `Images were added to page ${targetPageIndex + 1} and can now be moved anywhere on the presentation slide.`
     );
   } catch (error) {
     console.error(error);
     setStatus(error.message || "Image upload failed.");
   } finally {
     event.target.value = "";
+  }
+}
+
+function insertTextIntoTextarea(textarea, text) {
+  if (!textarea || typeof text !== "string") {
+    return {
+      endIndex: 0,
+      insertedText: ""
+    };
+  }
+
+  const selectionStart = Number.isFinite(textarea.selectionStart) ? textarea.selectionStart : textarea.value.length;
+  const selectionEnd = Number.isFinite(textarea.selectionEnd) ? textarea.selectionEnd : textarea.value.length;
+  const prefix = textarea.value.slice(0, selectionStart);
+  const suffix = textarea.value.slice(selectionEnd);
+  const needsLeadingBreak = prefix && !/\s$/.test(prefix) && text ? "\n" : "";
+  const needsTrailingBreak = suffix && !/^\s/.test(suffix) && text ? "\n" : "";
+  const insertion = `${needsLeadingBreak}${text}${needsTrailingBreak}`;
+
+  textarea.setRangeText(insertion, selectionStart, selectionEnd, "end");
+  return {
+    startIndex: selectionStart,
+    endIndex: selectionStart + insertion.length,
+    insertedText: insertion
+  };
+}
+
+function getPageIndexForTextOffset(pages = [], textOffset = 0, fallbackIndex = 0) {
+  if (!Array.isArray(pages) || !pages.length) {
+    return Math.max(0, fallbackIndex);
+  }
+
+  const safeOffset = Math.max(0, Math.round(Number(textOffset) || 0));
+  const matchIndex = pages.findIndex((page) => safeOffset <= Math.max(0, Number(page?.textEndIndex) || 0));
+  if (matchIndex >= 0) {
+    return matchIndex;
+  }
+
+  return Math.max(0, Math.min(Math.max(0, pages.length - 1), Math.round(Number(fallbackIndex) || 0)));
+}
+
+function getPdfClipboardImagePageIndexes(insertedText, insertedAbsoluteStartIndex, pages, images = [], fallbackPageIndex = 0) {
+  const safeInsertedText = String(insertedText || "");
+  if (!safeInsertedText || !Array.isArray(images) || !images.length) {
+    return [];
+  }
+
+  let searchStart = 0;
+  const orderedImages = [...images].sort((left, right) => {
+    const leftOrder = Number(left?.anchorOrder) || 0;
+    const rightOrder = Number(right?.anchorOrder) || 0;
+    return leftOrder - rightOrder;
+  });
+
+  return orderedImages.map((image, index) => {
+    const anchorText = String(image?.anchorText || "").trim();
+    let localOffset = -1;
+
+    if (anchorText) {
+      localOffset = safeInsertedText.indexOf(anchorText, searchStart);
+      if (localOffset < 0) {
+        localOffset = safeInsertedText.indexOf(anchorText);
+      }
+    }
+
+    if (localOffset < 0) {
+      localOffset = Math.round(((index + 1) / (orderedImages.length + 1)) * safeInsertedText.length);
+    } else {
+      searchStart = localOffset + anchorText.length;
+    }
+
+    return getPageIndexForTextOffset(
+      pages,
+      Math.max(0, insertedAbsoluteStartIndex + localOffset),
+      fallbackPageIndex
+    );
+  });
+}
+
+function parsePdfClipboardPayload(html = "") {
+  if (!html || !html.includes(PDF_CLIPBOARD_MARKER_ATTRIBUTE)) {
+    return {
+      text: "",
+      images: []
+    };
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const root = doc.querySelector(`[${PDF_CLIPBOARD_MARKER_ATTRIBUTE}]`);
+  if (!root) {
+    return {
+      text: "",
+      images: []
+    };
+  }
+
+  const text = root.querySelector("[data-maths-teacher-pdf-text]")?.textContent || "";
+  const images = Array.from(root.querySelectorAll("img[data-maths-teacher-example-image='1']"))
+    .map((image, index) => ({
+      dataUrl: image.getAttribute("src") || "",
+      fileName: image.getAttribute("data-file-name") || `pasted-example-${index + 1}.png`,
+      sourceTag: "pdf-clipboard",
+      anchorText: image.getAttribute("data-anchor-text") || "",
+      anchorOrder: Math.max(0, Math.round(Number(image.getAttribute("data-anchor-order")) || index)),
+      sourcePageNumber: Math.max(0, Math.round(Number(image.getAttribute("data-source-page-number")) || 0))
+    }))
+    .filter((item) => item.dataUrl.startsWith("data:image/"));
+
+  return { text, images };
+}
+
+async function handleLessonInputPaste(event) {
+  const clipboardData = event.clipboardData;
+  if (!clipboardData) {
+    return;
+  }
+
+  const html = clipboardData.getData("text/html") || "";
+  const plainText = clipboardData.getData("text/plain") || "";
+  const pdfPayload = parsePdfClipboardPayload(html);
+  const imageFiles = Array.from(clipboardData.items || [])
+    .filter((item) => item.kind === "file" && /^image\//i.test(item.type || ""))
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+
+  if (!pdfPayload.images.length && !imageFiles.length) {
+    return;
+  }
+
+  event.preventDefault();
+
+  try {
+    const filesAsImages = await Promise.all(
+      imageFiles.map(async (file, index) => ({
+        dataUrl: await readFileAsDataUrl(file),
+        fileName: file.name || `pasted-image-${index + 1}.png`,
+        sourceTag: "clipboard-image"
+      }))
+    );
+    const stageImages = [...pdfPayload.images, ...filesAsImages];
+    let targetPageIndex = stagePanel.classList.contains("hidden") ? 0 : state.previewPageIndex;
+    let imagePageIndexes = [];
+
+    if (pdfPayload.text || plainText) {
+      const insertResult = insertTextIntoTextarea(lessonInput, pdfPayload.text || plainText);
+      scheduleLessonInputChange();
+      const insertedTextEndIndex = Math.max(0, Number(insertResult.endIndex) || 0);
+      const insertedTextStartIndex = Math.max(0, Number(insertResult.startIndex) || 0);
+      const updatedContent = getPaginatedSlideContent(lessonInput.value.trim(), !lessonInput.value.trim(), targetPageIndex, false);
+      targetPageIndex = getPageIndexForTextOffset(updatedContent.pages, insertedTextEndIndex, targetPageIndex);
+      imagePageIndexes = getPdfClipboardImagePageIndexes(
+        insertResult.insertedText,
+        insertedTextStartIndex,
+        updatedContent.pages,
+        pdfPayload.images,
+        targetPageIndex
+      );
+    }
+
+    const stageImagesWithPages = stageImages.map((item, index) => ({
+      ...item,
+      pageIndex: Number.isInteger(imagePageIndexes[index])
+        ? imagePageIndexes[index]
+        : (Number.isInteger(item.pageIndex) ? item.pageIndex : targetPageIndex)
+    }));
+
+    const addedCount = await addStageImagesFromDataUrls(stageImagesWithPages, { targetPageIndex });
+    setStatus(
+      addedCount
+        ? `Pasted lesson content and added ${addedCount} maths/example image${addedCount === 1 ? "" : "s"} to the matching lesson pages.`
+        : "Pasted lesson content."
+    );
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "Could not paste the copied PDF example images.");
   }
 }
 
@@ -12998,27 +14656,38 @@ async function generateNarrationDownload(voice) {
 
   state.generatingNarration = true;
   updateSpeechToolsUi();
+  startNarrationLiveProgress("Generating anjali narration...");
 
   try {
     const label = getNarrationVoiceLabel(voice);
     state.preferredNarrationVoice = voice;
     updatePreferredVoiceUi();
     setNarrationGenStatus(`Generating ${label.toLowerCase()} narration...`);
-    updateTaskProgressUi(0.16, true);
+    setStatus(`Generating ${label.toLowerCase()} narration...`);
+    updateTaskProgressUi(0.16, true, { label: `Generating ${label.toLowerCase()} narration...` });
 
+    let syncProfile = null;
     const blob = await requestNarrationBlob(text, voice, {
-      timeoutMs: getLongNarrationRequestTimeoutMs(text)
+      timeoutMs: getLongNarrationRequestTimeoutMs(text),
+      onProgress: ({ label, progress }) => updateNarrationLiveProgress(label, progress),
+      onSyncProfile: (profile) => {
+        syncProfile = profile;
+      }
     });
-    updateTaskProgressUi(0.74, true);
+    updateTaskProgressUi(0.74, true, { label: `Finishing ${label.toLowerCase()} narration...` });
     const fileName = `${voice}-narration.wav`;
-    await setNarrationFromBlob(blob, fileName, `${label} narration`, text, voice);
-    updateTaskProgressUi(0.9, true);
+    await setNarrationFromBlob(blob, fileName, `${label} narration`, text, voice, { syncProfile });
+    updateTaskProgressUi(0.9, true, { label: `${label} narration is ready to download.` });
     triggerFileDownload(blob, fileName);
     setNarrationGenStatus(`${label} narration downloaded and loaded into the app.`);
-    updateTaskProgressUi(1, true);
+    setStatus(`${label} narration downloaded and loaded into the app.`);
+    updateTaskProgressUi(1, true, { label: `${label} narration downloaded and loaded into the app.` });
+    finishNarrationLiveProgress(`${label} narration ready.`);
   } catch (error) {
     console.error(error);
     setNarrationGenStatus(error.message || "Narration generation failed.");
+    setStatus(error.message || "Narration generation failed.", { error: true });
+    finishNarrationLiveProgress(error.message || "Narration generation failed.", { error: true });
   } finally {
     state.generatingNarration = false;
     resetTaskProgressUi();
@@ -13037,21 +14706,29 @@ async function loadGeneratedNarrationIntoApp(voice) {
 
   state.generatingNarration = true;
   updateSpeechToolsUi();
+  startNarrationLiveProgress("Generating anjali narration for the app...");
 
   try {
     const label = getNarrationVoiceLabel(voice);
     state.preferredNarrationVoice = voice;
     updatePreferredVoiceUi();
     setNarrationGenStatus(`Generating ${label.toLowerCase()} narration for the app...`);
-    updateTaskProgressUi(0.16, true);
+    setStatus(`Generating ${label.toLowerCase()} narration for the app...`);
+    updateTaskProgressUi(0.16, true, { label: `Generating ${label.toLowerCase()} narration for the app...` });
 
+    let syncProfile = null;
     const blob = await requestNarrationBlob(text, voice, {
-      timeoutMs: getLongNarrationRequestTimeoutMs(text)
+      timeoutMs: getLongNarrationRequestTimeoutMs(text),
+      onProgress: ({ label, progress }) => updateNarrationLiveProgress(label, progress),
+      onSyncProfile: (profile) => {
+        syncProfile = profile;
+      }
     });
-    updateTaskProgressUi(0.74, true);
+    updateTaskProgressUi(0.74, true, { label: `Loading ${label.toLowerCase()} narration into the app...` });
     const fileName = `${voice}-narration.wav`;
-    await setNarrationFromBlob(blob, fileName, `${label} narration`, text, voice);
+    await setNarrationFromBlob(blob, fileName, `${label} narration`, text, voice, { syncProfile });
     setNarrationGenStatus(`${label} narration is loaded into the app.`);
+    setStatus(`${label} narration is loaded into the app.`);
     if (audioPreview?.src) {
       try {
         audioPreview.currentTime = 0;
@@ -13060,10 +14737,13 @@ async function loadGeneratedNarrationIntoApp(voice) {
         console.error(playError);
       }
     }
-    updateTaskProgressUi(1, true);
+    updateTaskProgressUi(1, true, { label: `${label} narration is loaded into the app.` });
+    finishNarrationLiveProgress(`${label} narration is loaded into the app.`);
   } catch (error) {
     console.error(error);
     setNarrationGenStatus(error.message || "Narration generation failed.");
+    setStatus(error.message || "Narration generation failed.", { error: true });
+    finishNarrationLiveProgress(error.message || "Narration generation failed.", { error: true });
   } finally {
     state.generatingNarration = false;
     resetTaskProgressUi();
@@ -13100,7 +14780,30 @@ async function showScreen() {
   stagePanel.classList.remove("hidden");
   updateStageModeUi();
   updateStageViewUi();
-  drawScene(0.12);
+
+  if (state.introPlayback.enabled) {
+    const introReady = await ensureDefaultIntroClip();
+    if (introReady && state.introPlayback.element) {
+      state.introPlayback.previewVisible = true;
+      state.introPlayback.active = false;
+      try {
+        state.introPlayback.element.pause();
+        state.introPlayback.element.currentTime = 0;
+      } catch (error) {
+        console.error(error);
+      }
+      drawScene(0.12);
+      setIntroClipStatus("Intro clip is marked and shown on the screen. Play or Export will start with it.");
+    } else {
+      state.introPlayback.previewVisible = false;
+      state.introPlayback.active = false;
+      drawScene(0.12);
+    }
+  } else {
+    state.introPlayback.previewVisible = false;
+    state.introPlayback.active = false;
+    drawScene(0.12);
+  }
   if (state.stageVideo.element) {
     void startStageVideoPlayback({ restart: true });
   } else {
@@ -13216,6 +14919,9 @@ lessonInput.addEventListener("input", () => {
     }
   }
 });
+lessonInput.addEventListener("paste", (event) => {
+  void handleLessonInputPaste(event);
+});
 lessonInput.addEventListener("select", refreshSelectedPhraseFromInput);
 lessonInput.addEventListener("mouseup", refreshSelectedPhraseFromInput);
 lessonInput.addEventListener("keyup", refreshSelectedPhraseFromInput);
@@ -13302,6 +15008,19 @@ previewTextBtn.addEventListener("click", () => runLockedAction("preview", [previ
 if (previewAnjaliBtn) {
   previewAnjaliBtn.addEventListener("click", () => runLockedAction("preview", [previewTextBtn, previewAnjaliBtn], async () => startTextPreview("anjali")));
 }
+stageToolbarGroups.forEach((group) => {
+  group.addEventListener("toggle", () => {
+    if (!group.open) {
+      return;
+    }
+
+    stageToolbarGroups.forEach((otherGroup) => {
+      if (otherGroup !== group) {
+        otherGroup.open = false;
+      }
+    });
+  });
+});
 pdfInput.addEventListener("change", handlePdfSelection);
 pdfShowBtn.addEventListener("click", () => runLockedAction("pdfShow", [pdfShowBtn, pdfPresentBtn, showScreenBtn], showPdfOnScreen));
 pdfPresentBtn.addEventListener("click", () => runLockedAction("pdfPresent", [pdfShowBtn, pdfPresentBtn, playBtn], presentPdf));
@@ -13512,6 +15231,14 @@ playbackSpeedSelect.addEventListener("change", (event) => {
 playbackSpeedSelect.addEventListener("input", (event) => {
   handleStagePlaybackRateChange(event.target.value);
 });
+if (stagePlaybackSpeedSelect) {
+  stagePlaybackSpeedSelect.addEventListener("change", (event) => {
+    handleStagePlaybackRateChange(event.target.value);
+  });
+  stagePlaybackSpeedSelect.addEventListener("input", (event) => {
+    handleStagePlaybackRateChange(event.target.value);
+  });
+}
 stopStageBtn.addEventListener("click", () => {
   stopPlayback();
   setStatus("Playback stopped.");

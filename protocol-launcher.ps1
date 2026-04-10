@@ -3,7 +3,7 @@ param(
 )
 
 $projectRoot = $PSScriptRoot
-$anjaliCloneScript = Join-Path $projectRoot "anjali-clone-server.py"
+$anjaliCloneScript = Join-Path $projectRoot "anjali-chatterbox-server.py"
 $anjaliClonePython = Join-Path $projectRoot ".voiceclone-venv\Scripts\python.exe"
 
 function Wait-ForHttpReady {
@@ -103,10 +103,10 @@ function Start-PythonScriptIfNeeded {
   }
 
   if (-not (Test-Path $ScriptPath)) {
-    throw "Could not find anjali-clone-server.py."
+    throw "Could not find the Anjali voice server script."
   }
 
-  $command = '$env:PYTHONWARNINGS=''ignore''; & ''{0}'' ''{1}''' -f $PythonPath, $ScriptPath
+  $command = '$env:PYTHONWARNINGS=''ignore''; $env:COQUI_TOS_AGREED=''1''; & ''{0}'' ''{1}''' -f $PythonPath, $ScriptPath
   Start-Process powershell -WindowStyle Minimized -ArgumentList @(
     "-ExecutionPolicy", "Bypass",
     "-Command", $command
@@ -170,7 +170,7 @@ if ($Uri -and $Uri -notmatch "^learningoutcomes://") {
 }
 
 Ensure-ScriptReady -ScriptName "speech-server.ps1" -Port 8424 -HealthUrl "http://127.0.0.1:8424/health" -TimeoutSeconds 20
-Ensure-PythonScriptReady -PythonPath $anjaliClonePython -ScriptPath $anjaliCloneScript -Port 8426 -HealthUrl "http://127.0.0.1:8426/health" -TimeoutSeconds 90 -ReadyCheck { param($body) $body.modelLoaded -eq $true }
+Ensure-PythonScriptReady -PythonPath $anjaliClonePython -ScriptPath $anjaliCloneScript -Port 8426 -HealthUrl "http://127.0.0.1:8426/health" -TimeoutSeconds 240 -ReadyCheck { param($body) $body.modelLoaded -eq $true }
 Ensure-ScriptReady -ScriptName "transcribe-server.ps1" -Port 8428 -HealthUrl "http://127.0.0.1:8428/health" -TimeoutSeconds 20
 Ensure-ScriptReady -ScriptName "video-export-server.ps1" -Port 8430 -HealthUrl "http://127.0.0.1:8430/health" -TimeoutSeconds 20
 Ensure-ScriptReady -ScriptName "retest-static-server.ps1" -Port 8455 -HealthUrl "http://127.0.0.1:8455/__live-reload" -TimeoutSeconds 20

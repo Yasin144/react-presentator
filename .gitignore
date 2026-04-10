@@ -32,3 +32,10 @@ anjali-*-test.wav
 anjali-smoke-*.wav
 voice-preview-anjali.mp3
 *.pyc
+debug-frames-*/
+sample-export-subtitles.srt
+anjali-download-sample.*
+anjali-pronunciation-smoke.wav
+anjali-sync-recheck.wav
+voice-reference-anjali-source.mp4
+voice-reference-anjali-test.wav

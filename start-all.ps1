@@ -1,7 +1,7 @@
 $projectRoot = $PSScriptRoot
 
 $speechServer = Join-Path $projectRoot "speech-server.ps1"
-$anjaliCloneServer = Join-Path $projectRoot "anjali-clone-server.py"
+$anjaliCloneServer = Join-Path $projectRoot "anjali-chatterbox-server.py"
 $anjaliClonePython = Join-Path $projectRoot ".voiceclone-venv\Scripts\python.exe"
 $transcribeServer = Join-Path $projectRoot "transcribe-server.ps1"
 $videoExportServer = Join-Path $projectRoot "video-export-server.ps1"
@@ -82,13 +82,13 @@ Start-Process powershell -ArgumentList @(
 
 if ((Test-Path $anjaliClonePython) -and (Test-Path $anjaliCloneServer)) {
   Write-Host "Starting Anjali clone server..."
-  $anjaliCommand = '$env:PYTHONWARNINGS=''ignore''; & ''{0}'' ''{1}''' -f $anjaliClonePython, $anjaliCloneServer
+  $anjaliCommand = '$env:PYTHONWARNINGS=''ignore''; $env:COQUI_TOS_AGREED=''1''; & ''{0}'' ''{1}''' -f $anjaliClonePython, $anjaliCloneServer
   Start-Process powershell -ArgumentList @(
     "-ExecutionPolicy", "Bypass",
     "-Command", $anjaliCommand
   ) -WorkingDirectory $projectRoot
-  Write-Host "Waiting for Anjali clone model to warm up..."
-  if (Wait-ForHttpReady -Url "http://127.0.0.1:8426/health" -TimeoutSeconds 90 -ReadyCheck { param($body) $body.modelLoaded -eq $true }) {
+  Write-Host "Waiting for Anjali clone model to warm up (this can take 2-4 minutes on CPU)..."
+  if (Wait-ForHttpReady -Url "http://127.0.0.1:8426/health" -TimeoutSeconds 240 -ReadyCheck { param($body) $body.modelLoaded -eq $true }) {
     Write-Host "Anjali clone server is ready."
   } else {
     Write-Host "Anjali clone server started, but the model is still warming up."

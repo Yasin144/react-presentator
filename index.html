@@ -36,12 +36,15 @@
         <div class="theme-card hero-stage-card">
           <div class="hero-stage-topbar">
             <p class="hero-stage-note">Classroom board style</p>
-            <label class="theme-toggle theme-toggle-standalone" for="themeToggle" title="Toggle day and dark theme">
-              <input id="themeToggle" class="theme-toggle-input" type="checkbox" aria-label="Toggle dark mode">
-              <span class="theme-toggle-track">
-                <span class="theme-toggle-thumb"></span>
-              </span>
-            </label>
+            <div class="hero-stage-actions">
+              <button id="showScreenBtn" class="primary-btn input-show-screen-btn hero-show-screen-btn" type="button">Show Screen</button>
+              <label class="theme-toggle theme-toggle-standalone" for="themeToggle" title="Toggle day and dark theme">
+                <input id="themeToggle" class="theme-toggle-input" type="checkbox" aria-label="Toggle dark mode">
+                <span class="theme-toggle-track">
+                  <span class="theme-toggle-thumb"></span>
+                </span>
+              </label>
+            </div>
           </div>
           <strong id="themeModeLabel" class="theme-value theme-value-hidden">Day Theme</strong>
           <select id="themeSelect" class="theme-select hidden" aria-label="Choose theme">
@@ -141,9 +144,6 @@ three is less than nine"
             class="lesson-input"
             placeholder="Type or paste your lesson here"
           ></textarea>
-          <div class="input-screen-cta">
-            <button id="showScreenBtn" class="primary-btn input-show-screen-btn" type="button">Show Screen</button>
-          </div>
           <div class="display-style-card">
             <p class="field-label">Display Text Style</p>
             <p class="upload-copy">Choose how the lesson text should look on the blue screen before you open it.</p>
@@ -685,6 +685,12 @@ Space topic with stars, dreamy motion, and a magical learning feel."
               <button id="loadAnjaliNarrationBtn" class="primary-btn" type="button">Generate Anjali Narration</button>
               <button id="downloadAnjaliBtn" class="ghost-btn" type="button">Download Anjali Narration</button>
             </div>
+            <div id="narrationLiveIndicator" class="progress-indicator narration-live-indicator hidden" role="status" aria-live="polite">
+              <div class="progress-track">
+                <span id="narrationLiveProgressFill" class="progress-fill narration-live-progress-fill"></span>
+              </div>
+              <p class="upload-copy narration-live-progress-label" id="narrationLiveProgressLabel">Anjali narration is preparing...</p>
+            </div>
             <p class="upload-copy" id="narrationGenStatus">Enter text, then generate Anjali narration directly into the app or download the Anjali narration file.</p>
           </div>
         </div>
@@ -694,7 +700,7 @@ Space topic with stars, dreamy motion, and a magical learning feel."
 
     <section class="panel panel-stage hidden" id="stagePanel">
       <div class="stage-actions">
-        <details class="stage-toolbar-group stage-toolbar-primary stage-toolbar-card" open>
+        <details class="stage-toolbar-group stage-toolbar-primary stage-toolbar-card">
           <summary class="stage-toolbar-head stage-toolbar-summary">
             <div>
               <p class="stage-toolbar-label">Playback</p>
@@ -711,6 +717,19 @@ Space topic with stars, dreamy motion, and a magical learning feel."
               <button id="stopStageBtn" class="ghost-btn stage-icon-btn" type="button" aria-label="Stop" title="Stop"><span aria-hidden="true">&#9632;</span></button>
               <button id="stageImageUploadBtn" class="ghost-btn stage-icon-btn" type="button" aria-label="Upload images" title="Upload images"><span aria-hidden="true">IMG</span></button>
               <button id="stageVideoUploadBtn" class="ghost-btn stage-icon-btn" type="button" aria-label="Upload video" title="Upload video"><span aria-hidden="true">VID</span></button>
+            </div>
+            <div class="stage-playback-controls">
+              <label class="stage-speed-field stage-speed-field-inline" for="stagePlaybackSpeedSelect">
+                <span class="style-label">Screen Speed</span>
+                <select id="stagePlaybackSpeedSelect" class="theme-select text-style-select stage-speed-select" aria-label="Choose screen playback speed">
+                  <option value="0.5" selected>0.5x</option>
+                  <option value="0.75">0.75x</option>
+                  <option value="0.85">0.85x</option>
+                  <option value="0.9">0.9x</option>
+                  <option value="1">1x</option>
+                </select>
+              </label>
+              <p class="stage-speed-copy">Slows narration only. Anjali pitch stays natural.</p>
             </div>
             <div class="stage-media-tools" aria-label="Stage media tools">
               <button id="stageImageCutoutBtn" class="ghost-btn stage-icon-btn" type="button" disabled aria-label="Remove image background" title="Remove image background"><span aria-hidden="true">IMG-</span></button>
@@ -758,7 +777,7 @@ Space topic with stars, dreamy motion, and a magical learning feel."
           </div>
         </details>
 
-        <details id="stageViewCard" class="stage-toolbar-group stage-toolbar-card" open>
+        <details id="stageViewCard" class="stage-toolbar-group stage-toolbar-card">
           <summary class="stage-toolbar-head stage-toolbar-summary">
             <div>
               <p class="stage-toolbar-label">Zoom And Font</p>
@@ -778,7 +797,7 @@ Space topic with stars, dreamy motion, and a magical learning feel."
           </div>
         </details>
 
-        <details class="stage-toolbar-group stage-toolbar-export stage-toolbar-card" open>
+        <details class="stage-toolbar-group stage-toolbar-export stage-toolbar-card">
           <summary class="stage-toolbar-head stage-toolbar-summary">
             <div>
               <p class="stage-toolbar-label">Export And Format</p>
@@ -817,8 +836,9 @@ Space topic with stars, dreamy motion, and a magical learning feel."
           <label class="stage-speed-field" for="playbackSpeedSelect">
             <span class="style-label">Speed</span>
             <select id="playbackSpeedSelect" class="theme-select text-style-select stage-speed-select" aria-label="Choose playback speed">
-              <option value="0.5">0.5x</option>
-              <option value="0.85" selected>0.85x</option>
+              <option value="0.5" selected>0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="0.85">0.85x</option>
               <option value="0.9">0.9x</option>
               <option value="1">1x</option>
             </select>
