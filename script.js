@@ -11339,29 +11339,118 @@ function drawPresenterFigure() {
   ctx.restore();
 }
 
-function drawProceduralMathAnimations() {
+function drawProceduralConceptAnimations() {
   const isAnimatingContent = state.speaking || (state.displayedText && state.displayedText !== state.text);
   const boardSourceText = isAnimatingContent ? (state.displayedText || state.text) : state.text;
-  
+  const rawTime = (state.activeAudio?.currentTime || performance.now() / 1000);
+
+  // 1. Math Jumps / Subtraction
   const mathMatch = boardSourceText.match(/(?:let's\s*add|adding)?\s*(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)/i) || 
                     boardSourceText.match(/jumps?\s*from\s*(\d+).*?(?:add|jump|moves)\s*(\d+).*?(?:to|position)\s*(\d+)/i) || 
                     boardSourceText.match(/(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)/);
 
-  if (!mathMatch) return;
-  
-  const startNum = parseInt(mathMatch[1]);
-  const jumps = parseInt(mathMatch[2]);
-  const endNum = parseInt(mathMatch[3]);
-  if (isNaN(startNum) || isNaN(jumps) || isNaN(endNum) || startNum + jumps !== endNum) return;
-  if (jumps > 30) return; 
+  if (mathMatch) {
+    const startNum = parseInt(mathMatch[1]);
+    const jumps = parseInt(mathMatch[2]);
+    const endNum = parseInt(mathMatch[3]);
+    if (!isNaN(startNum) && !isNaN(jumps) && !isNaN(endNum) && startNum + jumps === endNum && jumps <= 30) {
+      drawProceduralNumberLine(startNum, jumps, endNum, rawTime);
+      return;
+    }
+  }
 
-  const rawTime = (state.activeAudio?.currentTime || performance.now() / 1000);
+  // 2. Multiplication Arrays
+  const multMatch = boardSourceText.match(/(\d+)\s*(?:x|\*|times)\s*(\d+)\s*(?:=|equals|is)\s*(\d+)/i);
+  if (multMatch) {
+     const rows = parseInt(multMatch[1]);
+     const cols = parseInt(multMatch[2]);
+     const total = parseInt(multMatch[3]);
+     if (rows * cols === total && rows <= 12 && cols <= 12) {
+        drawMultiplicationGrid(rows, cols, rawTime);
+        return;
+     }
+  }
+
+  // 3. Fallback: Generic High-Tech Image Scanner for ALL images
+  drawGenericImageScanner(rawTime);
+}
+
+function drawGenericImageScanner(rawTime) {
+  if (!state.images || state.images.length === 0) return;
+  const imgData = state.images[state.imageEditor?.activeIndex >= 0 ? state.imageEditor.activeIndex : 0];
+  if (!imgData) return;
+
+  const progress = (rawTime * Math.max(1, state.exportPlaybackRate)) % 4; // 4 second loop
+  
+  if (!state.imageRenderBoxes || !state.imageRenderBoxes.length) return;
+  const box = state.imageRenderBoxes[0]; 
+  
+  ctx.save();
+  const scanY = box.y + (progress / 4) * box.height;
+
+  ctx.beginPath();
+  ctx.moveTo(box.x, scanY);
+  ctx.lineTo(box.x + box.width, scanY);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(0, 255, 255, 0.8)";
+  ctx.shadowColor = "rgba(0, 255, 255, 1)";
+  ctx.shadowBlur = 15;
+  ctx.stroke();
+
+  const gradient = ctx.createLinearGradient(0, scanY - 30, 0, scanY);
+  gradient.addColorStop(0, "rgba(0, 255, 255, 0)");
+  gradient.addColorStop(1, "rgba(0, 255, 255, 0.2)");
+  
+  ctx.fillStyle = gradient;
+  ctx.fillRect(box.x, scanY - 30, box.width, 30);
+  ctx.restore();
+}
+
+function drawMultiplicationGrid(rows, cols, rawTime) {
+  const progress = (rawTime * Math.max(1, state.exportPlaybackRate)); 
+  const total = rows * cols;
+  
+  const boxSize = 40;
+  const padding = 10;
+  const gridWidth = (cols * boxSize) + ((cols - 1) * padding);
+  const gridHeight = (rows * boxSize) + ((rows - 1) * padding);
+  
+  const startX = (canvas.width - gridWidth) / 2;
+  const startY = (canvas.height - gridHeight) / 2 + 50;
+
+  ctx.save();
+  let count = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const staggerTime = (count / total) * 3; 
+      count++;
+      
+      if (progress < staggerTime) continue;
+      
+      const x = startX + c * (boxSize + padding);
+      const y = startY + r * (boxSize + padding);
+      
+      const popAlpha = Math.min(1, (progress - staggerTime) * 3);
+      const yOffset = Math.max(0, 20 * (1 - popAlpha) * (1 - popAlpha));
+      
+      ctx.globalAlpha = popAlpha;
+      ctx.fillStyle = `hsl(${(count * 20) % 360}, 80%, 60%)`;
+      ctx.fillRect(x, y - yOffset, boxSize, boxSize);
+      
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(x, y - yOffset, boxSize, boxSize);
+    }
+  }
+  ctx.restore();
+}
+
+function drawProceduralNumberLine(startNum, jumps, endNum, rawTime) {
   const progress = (rawTime * Math.max(1, state.exportPlaybackRate)) % (jumps * 1.5 + 2); 
   
   const lineY = canvas.height - 150;
   const lineStartX = 100;
   const lineEndX = canvas.width - 100;
-  
   const lineLength = Math.max(endNum, startNum + jumps) + 1; 
   const segmentWidth = (lineEndX - lineStartX) / lineLength;
 
@@ -11396,11 +11485,9 @@ function drawProceduralMathAnimations() {
 
   for (let j = 0; j < jumps; j++) {
      if (j > jumpProgressIndex) continue;
-     
      const jxStart = lineStartX + ((startNum + j) * segmentWidth);
      const jxEnd = lineStartX + ((startNum + j + 1) * segmentWidth);
      const arcHeight = -80;
-     
      ctx.beginPath();
      ctx.moveTo(jxStart, lineY);
      if (j < jumpProgressIndex) {
@@ -11412,7 +11499,6 @@ function drawProceduralMathAnimations() {
         const currentY = lineY + (arcHeight * Math.sin(p * Math.PI));
         ctx.quadraticCurveTo(jxStart + (currentX - jxStart)/2, lineY + (arcHeight * Math.sin((p/2) * Math.PI)), currentX, currentY);
         ctx.stroke();
-        
         ctx.beginPath();
         ctx.arc(currentX, currentY, 14, 0, Math.PI * 2);
         ctx.fillStyle = "#ff4545"; 
@@ -11433,7 +11519,6 @@ function drawProceduralMathAnimations() {
      ctx.lineWidth = 4;
      ctx.stroke();
   }
-
   ctx.restore();
 }
 
@@ -11985,7 +12070,7 @@ function drawScene(mouthOpen = 0.12) {
     state.contentScrollOffset = 0;
     drawMathPlaceValueBoard(contentArea, boardData, currentPageIndex, totalPageCount);
     drawOptionalImages(currentPageIndex, totalPageCount);
-    drawProceduralMathAnimations();
+    drawProceduralConceptAnimations();
     drawRuntimeDisplayErrorOverlay();
     requestCanvasExportFrame();
     return;
@@ -12066,7 +12151,7 @@ function drawScene(mouthOpen = 0.12) {
 
   ctx.restore();
   drawOptionalImages(currentPageIndex, totalPageCount);
-  drawProceduralMathAnimations();
+  drawProceduralConceptAnimations();
   drawRuntimeDisplayErrorOverlay();
   requestCanvasExportFrame();
 }
