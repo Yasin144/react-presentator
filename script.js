@@ -135,6 +135,12 @@ const cutoutControlsStatus = document.getElementById("cutoutControlsStatus");
 const imagePreviewList = document.getElementById("imagePreviewList");
 const introClipEnabled = document.getElementById("introClipEnabled");
 const introClipStatus = document.getElementById("introClipStatus");
+
+const proCaptionsEnabled = document.getElementById("proCaptionsEnabled");
+const proAnimationsEnabled = document.getElementById("proAnimationsEnabled");
+const proQuizEnabled = document.getElementById("proQuizEnabled");
+const proDuckingEnabled = document.getElementById("proDuckingEnabled");
+
 const videoInput = document.getElementById("videoInput");
 const clearVideoBtn = document.getElementById("clearVideoBtn");
 const videoPreview = document.getElementById("videoPreview");
@@ -7810,7 +7816,8 @@ async function muxVideoAndAudioChunked(videoBlob, audioBlob, musicBlob, options 
       videoSpeed,
       musicVolume,
       exportQuality,
-      targetDurationMs
+      targetDurationMs,
+      audioDuckingEnabled: Boolean(proDuckingEnabled && proDuckingEnabled.checked)
     })
   });
 
@@ -9231,7 +9238,8 @@ async function muxVideoAndAudio(videoBlob, audioBlob, options = {}) {
     videoSpeed,
     musicVolume,
     exportQuality,
-    targetDurationMs
+    targetDurationMs,
+    audioDuckingEnabled: Boolean(proDuckingEnabled && proDuckingEnabled.checked)
   });
 
   let response = null;
@@ -9262,7 +9270,8 @@ async function muxVideoAndAudio(videoBlob, audioBlob, options = {}) {
       videoSpeed,
       musicVolume,
       exportQuality,
-      targetDurationMs
+      targetDurationMs,
+      audioDuckingEnabled: Boolean(proDuckingEnabled && proDuckingEnabled.checked)
     };
     if (musicBlob?.size) {
       jsonPayload.musicBase64 = await blobToBase64(musicBlob);
@@ -11341,6 +11350,7 @@ function drawPresenterFigure() {
 }
 
 function drawCinematicCaptions() {
+  if (proCaptionsEnabled && !proCaptionsEnabled.checked) return;
   const timeline = state.narration?.syncProfile?.timeline || [];
   if (!timeline.length) return;
   if (!state.speaking && !state.exportingVideo) return; // Only show if active
@@ -11434,6 +11444,7 @@ function drawCinematicCaptions() {
 }
 
 function drawAutoQuizOverlay() {
+  if (proQuizEnabled && !proQuizEnabled.checked) return;
   if (!state.speaking && !state.exportingVideo) return;
   const boardSourceText = state.displayedText || state.text;
   
@@ -11521,6 +11532,7 @@ function drawAutoQuizOverlay() {
 }
 
 function drawProceduralConceptAnimations() {
+  if (proAnimationsEnabled && !proAnimationsEnabled.checked) return;
   const isAnimatingContent = state.speaking || (state.displayedText && state.displayedText !== state.text);
   const boardSourceText = isAnimatingContent ? (state.displayedText || state.text) : state.text;
   const rawTime = (state.activeAudio?.currentTime || performance.now() / 1000);

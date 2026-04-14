@@ -456,6 +456,7 @@ function Invoke-VideoMux {
     [string]$ExportQuality = "hd",
     [double]$MusicVolume = 0.18,
     [double]$TargetDurationMs = 0,
+    [bool]$AudioDuckingEnabled = $true,
     [switch]$KeepOutputFile
   )
 
@@ -494,18 +495,33 @@ function Invoke-VideoMux {
 
     if (-not [string]::IsNullOrWhiteSpace($MusicPath) -and (Test-Path $MusicPath)) {
       $args += @("-stream_loop", "-1", "-i", $MusicPath)
-      $audioFilterInput = if ($safeAudioSpeed -ne 1.0) { "[1:a]atempo=$audioSpeedText,asplit[narr_out][narr_sc]" } else { "[1:a]anull,asplit[narr_out][narr_sc]" }
-      $mixedAudioTail = if ($targetDurationSecondsText) {
-        "amix=inputs=2:duration=first:dropout_transition=2,apad=whole_dur=$targetDurationSecondsText[aout]"
+      if ($AudioDuckingEnabled) {
+          $audioFilterInput = if ($safeAudioSpeed -ne 1.0) { "[1:a]atempo=$audioSpeedText,asplit[narr_out][narr_sc]" } else { "[1:a]anull,asplit[narr_out][narr_sc]" }
+          $mixedAudioTail = if ($targetDurationSecondsText) {
+            "amix=inputs=2:duration=first:dropout_transition=2,apad=whole_dur=$targetDurationSecondsText[aout]"
+          } else {
+            "amix=inputs=2:duration=first:dropout_transition=2,apad[aout]"
+          }
+          $args += @(
+            "-filter_complex",
+            "$videoFilterInput;$audioFilterInput;[2:a]volume=$volumeText[music];[music][narr_sc]sidechaincompress=threshold=0.08:ratio=4:attack=5:release=50[ducked_music];[narr_out][ducked_music]$mixedAudioTail",
+            "-map", "[vout]",
+            "-map", "[aout]"
+          )
       } else {
-        "amix=inputs=2:duration=first:dropout_transition=2,apad[aout]"
+          $audioFilterInput = if ($safeAudioSpeed -ne 1.0) { "[1:a]atempo=$audioSpeedText[narr]" } else { "[1:a]anull[narr]" }
+          $mixedAudioTail = if ($targetDurationSecondsText) {
+            "amix=inputs=2:duration=first:dropout_transition=2,apad=whole_dur=$targetDurationSecondsText[aout]"
+          } else {
+            "amix=inputs=2:duration=first:dropout_transition=2,apad[aout]"
+          }
+          $args += @(
+            "-filter_complex",
+            "$videoFilterInput;$audioFilterInput;[2:a]volume=$volumeText[music];[narr][music]$mixedAudioTail",
+            "-map", "[vout]",
+            "-map", "[aout]"
+          )
       }
-      $args += @(
-        "-filter_complex",
-        "$videoFilterInput;$audioFilterInput;[2:a]volume=$volumeText[music];[music][narr_sc]sidechaincompress=threshold=0.08:ratio=4:attack=5:release=50[ducked_music];[narr_out][ducked_music]$mixedAudioTail",
-        "-map", "[vout]",
-        "-map", "[aout]"
-      )
     } elseif ($safeAudioSpeed -ne 1.0 -or $videoFilters.Count -gt 0) {
       $audioFilterInput = if ($targetDurationSecondsText) {
         if ($safeAudioSpeed -ne 1.0) {
@@ -693,6 +709,7 @@ function Handle-Request {
         -ExportQuality $(if ($metadata) { [string]$metadata.exportQuality } else { "hd" }) `
         -MusicVolume $(if ($metadata) { [double]$metadata.musicVolume } else { 0.18 }) `
         -TargetDurationMs $(if ($metadata) { [double]$metadata.targetDurationMs } else { 0.0 }) `
+        -AudioDuckingEnabled $(if ($metadata -and $metadata.audioDuckingEnabled -ne $null) { [bool]$metadata.audioDuckingEnabled } else { $true }) `
         -KeepOutputFile
       try {
         Write-FileResponse -Stream $Stream -StatusCode 200 -FilePath $muxedVideoPath -ContentType "video/mp4" -ExtraHeaders @{
@@ -743,6 +760,7 @@ function Handle-Request {
       $videoSpeed = if ($metadata) { [double]$metadata.videoSpeed } else { 1.0 }
       $musicVolume = if ($metadata) { [double]$metadata.musicVolume } else { 0.18 }
       $targetDurationMs = if ($metadata) { [double]$metadata.targetDurationMs } else { 0.0 }
+      $audioDuckingEnabled = if ($metadata -and $metadata.audioDuckingEnabled -ne $null) { [bool]$metadata.audioDuckingEnabled } else { $true }
 
       if ($binaryPayload.VideoLength -le 0 -or $binaryPayload.AudioLength -le 0) {
         Write-JsonResponse -Stream $Stream -StatusCode 400 -Payload @{ error = "Video and audio are both required." }
@@ -763,6 +781,7 @@ function Handle-Request {
       $videoSpeed = if ($payload) { [double]$payload.videoSpeed } else { 1.0 }
       $musicVolume = if ($payload) { [double]$payload.musicVolume } else { 0.18 }
       $targetDurationMs = if ($payload) { [double]$payload.targetDurationMs } else { 0.0 }
+      $audioDuckingEnabled = if ($payload -and $payload.audioDuckingEnabled -ne $null) { [bool]$payload.audioDuckingEnabled } else { $true }
 
       if ([string]::IsNullOrWhiteSpace($videoBase64) -or [string]::IsNullOrWhiteSpace($audioBase64)) {
         Write-JsonResponse -Stream $Stream -StatusCode 400 -Payload @{ error = "Video and audio are both required." }
@@ -814,6 +833,7 @@ function Handle-Request {
         -ExportQuality $exportQuality `
         -MusicVolume $musicVolume `
         -TargetDurationMs $targetDurationMs `
+        -AudioDuckingEnabled $audioDuckingEnabled `
         -KeepOutputFile
       Write-FileResponse -Stream $Stream -StatusCode 200 -FilePath $muxedVideoPath -ContentType "video/mp4" -ExtraHeaders @{
         "Cache-Control" = "no-store, no-cache, must-revalidate, max-age=0"
