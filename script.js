@@ -2280,7 +2280,16 @@ async function saveBlobWithHandle(fileHandle, blob) {
 }
 
 function splitIntoLines(text) {
-  return text
+  const smartText = String(text || "")
+    .replace(/(?<!\n)\n(?!\n)/g, (match, offset, string) => {
+      const nextSegment = string.substring(offset + 1).trimStart();
+      if (/^[•*-]\s|^#+|^[0-9]+\./.test(nextSegment)) {
+        return "\n";
+      }
+      return " ";
+    });
+
+  return smartText
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -2570,10 +2579,7 @@ function translateStandaloneMathText(text) {
 }
 
 function buildDisplayedLines(text) {
-  return text
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  return splitIntoLines(text);
 }
 
 function buildNarrationText(text) {
