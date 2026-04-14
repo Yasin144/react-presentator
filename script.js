@@ -15403,6 +15403,46 @@ function startDictation() {
   updateSpeechToolsUi();
 }
 
+function generateAndDownloadSrtCaptions(introOffsetMs = 0) {
+  const timeline = state.narration?.syncProfile?.timeline || [];
+  if (!timeline.length) return;
+
+  const formatSrtTimeMs = (ms) => {
+    const d = new Date(ms);
+    const hs = Math.floor(ms / 3600000).toString().padStart(2, '0');
+    const m = d.getUTCMinutes().toString().padStart(2, '0');
+    const s = d.getUTCSeconds().toString().padStart(2, '0');
+    const ms2 = (ms % 1000).toString().padStart(3, '0');
+    return `${hs}:${m}:${s},${ms2}`;
+  };
+
+  let srtStr = "";
+  let counter = 1;
+  let chunkText = [];
+  let chunkStartMs = timeline[0].startMs + introOffsetMs;
+  let chunkEndMs = 0;
+
+  timeline.forEach((item, index) => {
+    chunkText.push(item.text);
+    chunkEndMs = item.startMs + item.lengthMs + introOffsetMs;
+
+    const hasPunctuation = /[.,?!]/.test(item.text);
+    const isLast = index === timeline.length - 1;
+    if (chunkText.length >= 7 || hasPunctuation || isLast) {
+      srtStr += `${counter}\n`;
+      srtStr += `${formatSrtTimeMs(chunkStartMs)} --> ${formatSrtTimeMs(chunkEndMs)}\n`;
+      srtStr += `${chunkText.join(" ")}\n\n`;
+      counter++;
+
+      chunkText = [];
+      if (!isLast) chunkStartMs = timeline[index + 1].startMs + introOffsetMs;
+    }
+  });
+
+  const srtBlob = new Blob([srtStr], { type: "text/srt" });
+  triggerFileDownload(srtBlob, "captions.srt");
+}
+
 async function exportPdfModeVideo(renderMode = "context") {
   if (!getPdfSelectedPageCount()) {
     setStatus("Select at least one PDF page before downloading the PDF video.");
@@ -15612,6 +15652,7 @@ async function exportPdfModeVideo(renderMode = "context") {
       updateTaskProgressUi(1, true, { mirrorStage: true });
       setStatus(`${modeLabel} video saved successfully.`);
     } else {
+      generateAndDownloadSrtCaptions(0);
       triggerFileDownload(finalBlob, outputFileName);
       updateTaskProgressUi(1, true, { mirrorStage: true });
       setStatus(`${modeLabel} video downloaded successfully.`);
@@ -15908,6 +15949,7 @@ async function exportVideo() {
       updateTaskProgressUi(1, true, { mirrorStage: true });
       setStatus(`Video saved with${includedIntroInExport ? " intro and " : " "}narration audio.`);
     } else {
+      generateAndDownloadSrtCaptions(includedIntroInExport ? Math.max(0, Math.round(state.introPlayback.durationMs || 0)) : 0);
       triggerFileDownload(finalBlob, "learning-outcomes-video.mp4");
       updateTaskProgressUi(1, true, { mirrorStage: true });
       setStatus(`Video downloaded with${includedIntroInExport ? " intro and " : " "}narration audio.`);
