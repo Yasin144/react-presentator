@@ -3039,12 +3039,22 @@ function getSpeechSyncUnitSpokenText(displayText = "") {
     .trim();
 }
 
+function estimateSyllableWeight(word) {
+  const safeWord = String(word || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!safeWord) return 1;
+  const syllableWord = safeWord.replace(/(?:[^laeiouy]|ed|e)$/, '').replace(/^y/, '');
+  const syllables = syllableWord.match(/[aeiouy]{1,2}/g);
+  return syllables ? Math.max(1, syllables.length) : 1;
+}
+
 function getSpeechSyncUnitSpeechMs(unit) {
   if (!unit?.spokenText) {
     return 0;
   }
 
-  const wordCount = splitIntoWords(unit.spokenText).length;
+  const words = splitIntoWords(unit.spokenText);
+  const wordCount = words.length;
+  const syllableCount = words.reduce((sum, word) => sum + estimateSyllableWeight(word), 0);
   const characterCount = unit.spokenText.replace(/\s+/g, "").length;
   const contextBoost = [
     unit.lineContext?.isHeading ? 1.18 : 1,
@@ -3054,7 +3064,8 @@ function getSpeechSyncUnitSpeechMs(unit) {
     /[=+\-×÷*/<>≤≥≠^%]/.test(unit.displayText) ? 1.12 : 1
   ].reduce((product, value) => product * value, 1);
 
-  return Math.max(180, Math.round(((wordCount * 220) + (characterCount * 28)) * contextBoost));
+  const baseSpeechMs = (wordCount * 80) + (syllableCount * 120) + (characterCount * 15);
+  return Math.max(180, Math.round(baseSpeechMs * contextBoost));
 }
 
 function getSpeechSyncUnitPauseMs(unit, nextUnit = null) {
