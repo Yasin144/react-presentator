@@ -536,26 +536,45 @@ function Invoke-VideoMux {
       )
     }
 
-    $args += @(
-      "-c:v", "libx264",
-      "-profile:v", "high",
-      "-level", $(if ($is4k) { "5.1" } elseif ($is2k) { "5.0" } else { "4.1" }),
-      "-pix_fmt", "yuv420p",
-      "-preset", "veryfast",
-      "-crf", $(if ($is4k) { "12" } elseif ($is2k) { "13" } else { "14" }),
-      "-maxrate", $(if ($is4k) { "32M" } elseif ($is2k) { "22M" } else { "14M" }),
-      "-bufsize", $(if ($is4k) { "64M" } elseif ($is2k) { "44M" } else { "28M" }),
-      "-movflags", "+faststart",
-      "-c:a", "aac",
-      "-ar", "48000",
-      "-b:a", "192k",
-      $outputPath
+    $baseArgs = $args
+
+    $encoderConfigs = @(
+      @{
+        Name = "NVENC (Nvidia GPU - Ultra Fast)"
+        Args = @("-c:v", "h264_nvenc", "-preset", "p4", "-cq", $(if ($is4k) { "18" } elseif ($is2k) { "20" } else { "22" }), "-b:v", $(if ($is4k) { "32M" } elseif ($is2k) { "22M" } else { "14M" }), "-pix_fmt", "yuv420p")
+      },
+      @{
+        Name = "AMF (AMD GPU - Ultra Fast)"
+        Args = @("-c:v", "h264_amf", "-quality", "quality", "-b:v", $(if ($is4k) { "32M" } elseif ($is2k) { "22M" } else { "14M" }), "-pix_fmt", "yuv420p")
+      },
+      @{
+        Name = "QSV (Intel GPU - Fast)"
+        Args = @("-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "22", "-b:v", $(if ($is4k) { "32M" } elseif ($is2k) { "22M" } else { "14M" }), "-pix_fmt", "yuv420p")
+      },
+      @{
+        Name = "CPU Fast (Universal Fallback)"
+        Args = @("-c:v", "libx264", "-profile:v", "high", "-level", $(if ($is4k) { "5.1" } elseif ($is2k) { "5.0" } else { "4.1" }), "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", $(if ($is4k) { "12" } elseif ($is2k) { "13" } else { "14" }), "-maxrate", $(if ($is4k) { "32M" } elseif ($is2k) { "22M" } else { "14M" }), "-bufsize", $(if ($is4k) { "64M" } elseif ($is2k) { "44M" } else { "28M" }))
+      }
     )
 
-    $transcodeOutput = & $ffmpegPath @args 2>&1 | Out-String
+    $audioArgs = @("-c:a", "aac", "-ar", "48000", "-b:a", "192k", "-movflags", "+faststart", $outputPath)
+    
+    $success = $false
+    foreach ($config in $encoderConfigs) {
+      if (Test-Path $outputPath) { Remove-Item $outputPath -Force }
+      Write-Host "Trying video export with $($config.Name)..."
+      $fullArgs = $baseArgs + $config.Args + $audioArgs
+      
+      $transcodeOutput = & $ffmpegPath @fullArgs 2>&1 | Out-String
+      if ($LASTEXITCODE -eq 0 -and (Test-Path $outputPath)) {
+        Write-Host "Success! Compiled with $($config.Name)."
+        $success = $true
+        break
+      }
+    }
 
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outputPath)) {
-      throw "FFmpeg failed to combine the video and audio. $transcodeOutput"
+    if (-not $success) {
+      throw "All FFmpeg encoding methods failed. Last error: $transcodeOutput"
     }
 
     if ($KeepOutputFile) {
