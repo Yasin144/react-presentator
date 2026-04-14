@@ -89,6 +89,7 @@ const stageImageCutoutBtn = document.getElementById("stageImageCutoutBtn");
 const stageImageRestoreBtn = document.getElementById("stageImageRestoreBtn");
 const stageVideoCutoutBtn = document.getElementById("stageVideoCutoutBtn");
 const stageVideoRestoreBtn = document.getElementById("stageVideoRestoreBtn");
+const stageAutoTeachBtn = document.getElementById("stageAutoTeachBtn");
 const stageRemoveImageBtn = document.getElementById("stageRemoveImageBtn");
 const stageClearImagesBtn = document.getElementById("stageClearImagesBtn");
 const stageRemoveVideoBtn = document.getElementById("stageRemoveVideoBtn");
@@ -13816,6 +13817,44 @@ async function applySmartCutoutToImageAt(index, force = true) {
   };
 }
 
+async function autoTeachSelectedImage() {
+  if (isPdfPresentationMode()) {
+    setStatus("Auto-Teach is only available for individually uploaded Stage Images.");
+    return;
+  }
+  const selectedImage = state.images[state.imageEditor.activeIndex];
+  if (!selectedImage || !selectedImage.dataUrl) {
+    setStatus("Please select an image on the board first to auto-teach.");
+    return;
+  }
+  
+  setStatus("Engaging Moondream2 Vision AI... (The brain takes ~25 seconds to download/load if this is the first use!)");
+  try {
+    const response = await fetch("http://127.0.0.1:8424/api/vision/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: selectedImage.originalDataUrl || selectedImage.dataUrl,
+        prompt: "Analyze this image and explain exactly what it teaches in a short, easy-to-read educational paragraph that a teacher could read to students. Do not use asterisks or formatting."
+      })
+    });
+    
+    const result = await response.json();
+    if (!response.ok) {
+       throw new Error(result.error || "Failed to analyze image.");
+    }
+    
+    if (textInput && result.text) {
+       textInput.value = result.text.trim();
+       updateTextState(textInput.value);
+       setStatus("Success! AI Vision generated the lesson script. You can edit it now.");
+    }
+  } catch (error) {
+    setStatus(`Vision AI Error: ${error.message}`);
+    console.error("AutoTeach Error:", error);
+  }
+}
+
 function removeImageAt(index) {
   if (index < 0 || index >= state.images.length) {
     return;
@@ -13924,6 +13963,10 @@ function updateStageMediaToolUi() {
 
   if (stageRemoveImageBtn) {
     stageRemoveImageBtn.disabled = isPdfPresentationMode() || !selectedImage;
+  }
+  
+  if (stageAutoTeachBtn) {
+    stageAutoTeachBtn.style.display = (isPdfPresentationMode() || !selectedImage) ? "none" : "block";
   }
 
   if (stageClearImagesBtn) {
@@ -17285,6 +17328,9 @@ updateCutoutControlsUi();
 setCutoutControlsStatus("These controls apply to both image and video background removal.");
 checkServerHealth();
 startAnjaliCloneMonitor();
+if (stageAutoTeachBtn) {
+  stageAutoTeachBtn.addEventListener("click", autoTeachSelectedImage);
+}
 if (stageRemoveImageBtn) {
   stageRemoveImageBtn.addEventListener("click", removeSelectedStageImage);
 }

@@ -35,7 +35,30 @@ for proxy_key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https
 import numpy as np
 import torch
 from chatterbox.tts_turbo import ChatterboxTurboTTS
+import base64
+from PIL import Image
 
+VISION_MODEL = None
+VISION_TOKENIZER = None
+VISION_LOADING = False
+
+def get_vision_engine():
+    global VISION_MODEL, VISION_TOKENIZER, VISION_LOADING
+    if VISION_MODEL is None:
+        if VISION_LOADING:
+            raise Exception("The ultra-smart Vision AI is currently downloading/loading its brain (1.5GB) into memory. Please wait a few moments and try again!")
+        VISION_LOADING = True
+        try:
+            print("\n[VISION] Booting Moondream2 Local Vision-Language Brain... (May take a moment to download).", flush=True)
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            model_id = "vikhyatk/moondream2"
+            revision = "2024-08-26"
+            VISION_MODEL = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, revision=revision)
+            VISION_TOKENIZER = AutoTokenizer.from_pretrained(model_id, revision=revision)
+            print("[VISION] Vision Brain fully initialized and ready to auto-teach!", flush=True)
+        finally:
+            VISION_LOADING = False
+    return VISION_MODEL, VISION_TOKENIZER
 
 def ensure_reference_mp3():
     if REFERENCE_SOURCE_VIDEO.exists() or DESKTOP_GOOD_VOICE_VIDEO.exists():
@@ -347,6 +370,31 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"error": "Route not found."}, status_code=404)
 
     def do_POST(self):
+        if self.path.startswith("/api/vision/analyze"):
+            try:
+                content_length = int(self.headers.get("Content-Length", "0") or "0")
+                raw_body = self.rfile.read(content_length) if content_length else b"{}"
+                payload = json.loads(raw_body.decode("utf-8"))
+                
+                b64_img = payload.get("image", "").split("base64,")[-1]
+                prompt = payload.get("prompt", "Analyze this image and explain exactly what it teaches in a short, easy-to-read educational paragraph that a teacher could read to students.")
+                
+                import base64
+                from PIL import Image
+                import io
+                
+                image_data = base64.b64decode(b64_img)
+                img = Image.open(io.BytesIO(image_data))
+                
+                v_model, v_tokenizer = get_vision_engine()
+                enc_image = v_model.encode_image(img)
+                answer = v_model.answer_question(enc_image, prompt, v_tokenizer)
+                
+                self._send_json({"text": answer})
+            except Exception as e:
+                self._send_json({"error": str(e), "traceback": traceback.format_exc(limit=3)}, status_code=500)
+            return
+
         if not self.path.startswith("/api/narrate"):
             self._send_json({"error": "Route not found."}, status_code=404)
             return
