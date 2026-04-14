@@ -11371,6 +11371,9 @@ function drawOptionalImages(currentPageIndex = 0, totalPageCount = 1) {
             const ease = 1 - Math.pow(1 - (popProgressMs / 400), 3);
             drawAlpha = ease;
             drawScale = 0.8 + (0.2 * Math.sin(ease * Math.PI / 2)); 
+         } else {
+            const cinematicProgress = (popProgressMs - 400) / Math.max(1, durationMs);
+            drawScale = 1.0 + (cinematicProgress * 0.04);
          }
       }
     }
