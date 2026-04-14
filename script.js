@@ -13712,7 +13712,10 @@ async function applySmartCutoutToDataUrl(dataUrl, options = {}) {
     tryEnqueue(width - 1, y);
   }
 
+  const yieldToUi = () => new Promise((r) => setTimeout(r, 0));
+
   for (let head = 0; head < queue.length; head += 1) {
+    if (head > 0 && head % 35000 === 0) await yieldToUi();
     const index = queue[head];
     const x = index % width;
     const y = Math.floor(index / width);
@@ -13724,6 +13727,7 @@ async function applySmartCutoutToDataUrl(dataUrl, options = {}) {
 
   let removedPixels = 0;
   for (let index = 0; index < backgroundMask.length; index += 1) {
+    if (index > 0 && index % 150000 === 0) await yieldToUi();
     if (!backgroundMask[index]) {
       continue;
     }
@@ -13733,6 +13737,7 @@ async function applySmartCutoutToDataUrl(dataUrl, options = {}) {
   }
 
   for (let index = 0; index < backgroundMask.length; index += 1) {
+    if (index > 0 && index % 100000 === 0) await yieldToUi();
     if (backgroundMask[index]) {
       continue;
     }
