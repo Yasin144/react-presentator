@@ -11338,12 +11338,51 @@ function drawOptionalImages(currentPageIndex = 0, totalPageCount = 1) {
 
   const interactivePreview = canvas === previewCanvas && !stagePanel.classList.contains("hidden");
 
+  let elapsedMs = 0;
+  let durationMs = 0;
+  if (state.speaking || state.exportVideoTrack?.readyState === "live") {
+    elapsedMs = state.exportVideoTrack?.readyState === "live" ? state.exportCapture.elapsedMs : state.playback.elapsedMs;
+    durationMs = state.narration?.syncProfile?.totalDurationMs || 0;
+  }
+  const totalImages = pageEntries.length;
+
   pageEntries.forEach(({ item, index }) => {
+    let drawScale = 1.0;
+    let drawAlpha = 1.0;
+    
+    if (durationMs > 0 && totalImages > 0 && (state.speaking || state.exportVideoTrack?.readyState === "live")) {
+      const staggeredRevealTimeMs = (durationMs / (totalImages + 1)) * (index + 1);
+      if (elapsedMs < staggeredRevealTimeMs) {
+         drawAlpha = 0;
+      } else {
+         const popProgressMs = elapsedMs - staggeredRevealTimeMs;
+         if (popProgressMs < 400) {
+            const ease = 1 - Math.pow(1 - (popProgressMs / 400), 3);
+            drawAlpha = ease;
+            drawScale = 0.8 + (0.2 * Math.sin(ease * Math.PI / 2)); 
+         }
+      }
+    }
+
+    if (drawAlpha <= 0 && !interactivePreview) return;
+
     const frame = clampImageFrame(item, index);
     const cellX = frame.x;
     const cellY = frame.y;
     const cellWidth = frame.width;
     const cellHeight = frame.height;
+    
+    const centerX = cellX + (cellWidth / 2);
+    const centerY = cellY + (cellHeight / 2);
+
+    ctx.save();
+    
+    if ((drawAlpha < 1.0 || drawScale !== 1.0) && !interactivePreview) {
+      ctx.globalAlpha = drawAlpha;
+      ctx.translate(centerX, centerY);
+      ctx.scale(drawScale, drawScale);
+      ctx.translate(-centerX, -centerY);
+    }
     const innerX = cellX + 8;
     const innerY = cellY + 8;
     const innerW = Math.max(24, cellWidth - 16);
