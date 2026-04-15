@@ -508,6 +508,18 @@ body::after {
   flex: 1 1 320px;
 }
 
+.outcomes-title-row {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--summary-border);
+}
+
+.outcomes-title-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .spacing-toolbar {
   flex-wrap: wrap;
 }

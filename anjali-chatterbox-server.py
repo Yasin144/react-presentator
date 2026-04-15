@@ -51,7 +51,7 @@ def get_vision_engine():
         try:
             print("\n[VISION] Booting Moondream2 Local Vision-Language Brain to D: Drive... (May take a moment to download).", flush=True)
             import os
-            cache_path = "D:\\AI_Models\\HuggingFace"
+            cache_path = os.path.join(os.path.dirname(__file__), "AI_Models", "HuggingFace")
             os.makedirs(cache_path, exist_ok=True)
             from transformers import AutoModelForCausalLM, AutoTokenizer
             model_id = "vikhyatk/moondream2"
@@ -320,6 +320,13 @@ class AnjaliCloneEngine:
 
             wav_np = wav.squeeze(0).detach().cpu().numpy()
             wav_bytes = self._wav_array_to_bytes(wav_np, self.sample_rate)
+            del wav
+            del wav_np
+            del model
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         self._store_cached_audio(safe_text, wav_bytes)
         return wav_bytes
@@ -392,6 +399,12 @@ class Handler(BaseHTTPRequestHandler):
                 v_model, v_tokenizer = get_vision_engine()
                 enc_image = v_model.encode_image(img)
                 answer = v_model.answer_question(enc_image, prompt, v_tokenizer)
+                del enc_image
+                del img
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 
                 self._send_json({"text": answer})
             except Exception as e:

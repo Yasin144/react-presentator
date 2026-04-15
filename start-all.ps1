@@ -64,7 +64,7 @@ function Stop-ListeningProcessOnPort {
 }
 
 Stop-ProcessesMatching -Pattern "speech-server.ps1"
-Stop-ProcessesMatching -Pattern "anjali-clone-server.py"
+Stop-ProcessesMatching -Pattern "anjali-chatterbox-server.py"
 Stop-ProcessesMatching -Pattern "transcribe-server.ps1"
 Stop-ProcessesMatching -Pattern "video-export-server.ps1"
 Stop-ProcessesMatching -Pattern "retest-static-server.ps1"
@@ -75,18 +75,12 @@ Stop-ListeningProcessOnPort -Port 8430
 Stop-ListeningProcessOnPort -Port 8455
 
 Write-Host "Starting narration server..."
-Start-Process powershell -ArgumentList @(
-  "-ExecutionPolicy", "Bypass",
-  "-File", "`"$speechServer`""
-) -WorkingDirectory $projectRoot
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File ""$speechServer""" -WorkingDirectory $projectRoot
 
 if ((Test-Path $anjaliClonePython) -and (Test-Path $anjaliCloneServer)) {
   Write-Host "Starting Anjali clone server..."
   $anjaliCommand = '$env:PYTHONWARNINGS=''ignore''; $env:COQUI_TOS_AGREED=''1''; & ''{0}'' ''{1}''' -f $anjaliClonePython, $anjaliCloneServer
-  Start-Process powershell -ArgumentList @(
-    "-ExecutionPolicy", "Bypass",
-    "-Command", $anjaliCommand
-  ) -WorkingDirectory $projectRoot
+  Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -Command ""$anjaliCommand""" -WorkingDirectory $projectRoot
   Write-Host "Waiting for Anjali clone model to warm up (this can take 2-4 minutes on CPU)..."
   if (Wait-ForHttpReady -Url "http://127.0.0.1:8426/health" -TimeoutSeconds 240 -ReadyCheck { param($body) $body.modelLoaded -eq $true }) {
     Write-Host "Anjali clone server is ready."
@@ -98,22 +92,13 @@ if ((Test-Path $anjaliClonePython) -and (Test-Path $anjaliCloneServer)) {
 }
 
 Write-Host "Starting transcription server..."
-Start-Process powershell -ArgumentList @(
-  "-ExecutionPolicy", "Bypass",
-  "-File", "`"$transcribeServer`""
-) -WorkingDirectory $projectRoot
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File ""$transcribeServer""" -WorkingDirectory $projectRoot
 
 Write-Host "Starting video export server..."
-Start-Process powershell -ArgumentList @(
-  "-ExecutionPolicy", "Bypass",
-  "-File", "`"$videoExportServer`""
-) -WorkingDirectory $projectRoot
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File ""$videoExportServer""" -WorkingDirectory $projectRoot
 
 Write-Host "Starting app server with live reload..."
-Start-Process powershell -ArgumentList @(
-  "-ExecutionPolicy", "Bypass",
-  "-File", "`"$staticServer`""
-) -WorkingDirectory $projectRoot
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File ""$staticServer""" -WorkingDirectory $projectRoot
 Wait-ForHttpReady -Url "http://127.0.0.1:8455/__live-reload" -TimeoutSeconds 20 | Out-Null
 
 Write-Host ""

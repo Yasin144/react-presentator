@@ -1,5 +1,5 @@
 $port = 8455
-$root = "C:\Users\patan\Documents\New project"
+$root = $PSScriptRoot
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://127.0.0.1:$port/")
 

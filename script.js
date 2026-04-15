@@ -1502,15 +1502,15 @@ function resetSceneGenerationProgress() {
 
 function updateSceneGeneratorUi() {
   const isBusy = state.sceneGenerationActive;
-  generateSceneBtn.disabled = isBusy;
-  generateSceneShowBtn.disabled = isBusy;
-  clearSceneBtn.disabled = isBusy;
-  scenePromptInput.disabled = isBusy;
-  sceneVfxSelect.disabled = isBusy;
-  sceneMusicModeSelect.disabled = isBusy;
-  exportQualitySelect.disabled = isBusy;
-  sceneImageInput.disabled = isBusy;
-  sceneMusicInput.disabled = isBusy;
+  if (generateSceneBtn) generateSceneBtn.disabled = isBusy;
+  if (generateSceneShowBtn) generateSceneShowBtn.disabled = isBusy;
+  if (clearSceneBtn) clearSceneBtn.disabled = isBusy;
+  if (scenePromptInput) scenePromptInput.disabled = isBusy;
+  if (sceneVfxSelect) sceneVfxSelect.disabled = isBusy;
+  if (sceneMusicModeSelect) sceneMusicModeSelect.disabled = isBusy;
+  if (exportQualitySelect) exportQualitySelect.disabled = isBusy;
+  if (sceneImageInput) sceneImageInput.disabled = isBusy;
+  if (sceneMusicInput) sceneMusicInput.disabled = isBusy;
 }
 
 function updateStagePageUi(currentPageIndex = 0, totalPageCount = 1) {
@@ -4272,12 +4272,12 @@ function handleLessonInputChange() {
     setStatus(lessonIssue.message, { error: true });
   }
 
-  if (!scenePromptInput.value.trim()) {
+  if (scenePromptInput && !scenePromptInput.value.trim()) {
     const previewScene = analyzeScenePrompt(nextText);
     state.scene = {
       ...state.scene,
       ...previewScene,
-      vfx: sceneVfxSelect.value === "auto" ? previewScene.vfx : sceneVfxSelect.value,
+      vfx: sceneVfxSelect && sceneVfxSelect.value === "auto" ? previewScene.vfx : (sceneVfxSelect ? sceneVfxSelect.value : previewScene.vfx),
       exportQuality: getSelectedExportQuality()
     };
     updateScenePreview();
@@ -4726,6 +4726,8 @@ function applyLessonRenderStateFromText(text, options = {}) {
   state.previewPageIndex = Math.max(0, Math.round(Number(options.previewPageIndex) || 0));
   state.renderedPageCount = Math.max(1, Math.round(Number(options.renderedPageCount) || 1));
   state.contentScrollOffset = 0;
+  // Invalidate layout cache whenever the source text changes
+  invalidateDrawSceneLayoutCache();
 }
 
 function restoreLessonRenderStateSnapshot(snapshot) {
@@ -8675,6 +8677,9 @@ function cancelVisualLoop() {
     cancelAnimationFrame(state.animationFrame);
     state.animationFrame = null;
   }
+  if (typeof cancelStageMediaLoop === "function") {
+    cancelStageMediaLoop();
+  }
 }
 
 function resetNarrationState() {
@@ -11533,13 +11538,16 @@ function drawAutoQuizOverlay() {
 
 function drawProceduralConceptAnimations() {
   if (proAnimationsEnabled && !proAnimationsEnabled.checked) return;
+  // Only run during active narration or video export — not while the user is just typing
+  if (!state.speaking && !state.exportingVideo) return;
   const isAnimatingContent = state.speaking || (state.displayedText && state.displayedText !== state.text);
   const boardSourceText = isAnimatingContent ? (state.displayedText || state.text) : state.text;
+  if (!boardSourceText) return;
   const rawTime = (state.activeAudio?.currentTime || performance.now() / 1000);
 
-  // 1. Math Jumps / Subtraction
-  const mathMatch = boardSourceText.match(/(?:let's\s*add|adding)?\s*(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)/i) || 
-                    boardSourceText.match(/jumps?\s*from\s*(\d+).*?(?:add|jump|moves)\s*(\d+).*?(?:to|position)\s*(\d+)/i) || 
+  // 1. Math Jumps / Addition
+  const mathMatch = boardSourceText.match(/(?:let's\s*add|adding)?\s*(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)/i) ||
+                    boardSourceText.match(/jumps?\s*from\s*(\d+).*?(?:add|jump|moves)\s*(\d+).*?(?:to|position)\s*(\d+)/i) ||
                     boardSourceText.match(/(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)/);
 
   if (mathMatch) {
@@ -11555,16 +11563,16 @@ function drawProceduralConceptAnimations() {
   // 2. Multiplication Arrays
   const multMatch = boardSourceText.match(/(\d+)\s*(?:x|\*|times)\s*(\d+)\s*(?:=|equals|is)\s*(\d+)/i);
   if (multMatch) {
-     const rows = parseInt(multMatch[1]);
-     const cols = parseInt(multMatch[2]);
-     const total = parseInt(multMatch[3]);
-     if (rows * cols === total && rows <= 12 && cols <= 12) {
-        drawMultiplicationGrid(rows, cols, rawTime);
-        return;
-     }
+    const rows = parseInt(multMatch[1]);
+    const cols = parseInt(multMatch[2]);
+    const total = parseInt(multMatch[3]);
+    if (rows * cols === total && rows <= 12 && cols <= 12) {
+      drawMultiplicationGrid(rows, cols, rawTime);
+      return;
+    }
   }
 
-  // 3. Fallback: Generic High-Tech Image Scanner for ALL images
+  // 3. Fallback: Generic High-Tech Image Scanner (only when images are present)
   drawGenericImageScanner(rawTime);
 }
 
@@ -12149,6 +12157,49 @@ function drawPdfScene() {
   requestCanvasExportFrame();
 }
 
+// ---------------------------------------------------------------------------
+// Layout cache: caches getPaginatedSlideContent results for state.text so
+// the two expensive layout passes per drawScene frame (textOnly + full) are
+// only recomputed when the source text, page index, or image state changes.
+// Only activeContent (animated partial text) is recomputed every frame.
+// ---------------------------------------------------------------------------
+const _drawSceneLayoutCache = {
+  textOnlyKey: "",
+  textOnlyResult: null,
+  fullKey: "",
+  fullResult: null
+};
+
+function invalidateDrawSceneLayoutCache() {
+  _drawSceneLayoutCache.textOnlyKey = "";
+  _drawSceneLayoutCache.textOnlyResult = null;
+  _drawSceneLayoutCache.fullKey = "";
+  _drawSceneLayoutCache.fullResult = null;
+}
+
+function getCachedTextOnlyContent(text, pageIndex) {
+  const key = `${text}||${pageIndex}`;
+  if (_drawSceneLayoutCache.textOnlyKey === key && _drawSceneLayoutCache.textOnlyResult) {
+    return _drawSceneLayoutCache.textOnlyResult;
+  }
+  const result = getPaginatedSlideContent(text, !text, pageIndex, false);
+  _drawSceneLayoutCache.textOnlyKey = key;
+  _drawSceneLayoutCache.textOnlyResult = result;
+  return result;
+}
+
+function getCachedFullContent(text, pageIndex, hasImages) {
+  const key = `${text}||${pageIndex}||${hasImages}`;
+  if (_drawSceneLayoutCache.fullKey === key && _drawSceneLayoutCache.fullResult) {
+    return _drawSceneLayoutCache.fullResult;
+  }
+  const result = getPaginatedSlideContent(text, !text, pageIndex, hasImages);
+  _drawSceneLayoutCache.fullKey = key;
+  _drawSceneLayoutCache.fullResult = result;
+  return result;
+}
+// ---------------------------------------------------------------------------
+
 function drawScene(mouthOpen = 0.12) {
   if ((state.introPlayback.active || state.introPlayback.previewVisible) && state.introPlayback.element) {
     drawIntroScene();
@@ -12176,12 +12227,9 @@ function drawScene(mouthOpen = 0.12) {
   const isAnimatingContent = state.speaking || (state.displayedText && state.displayedText !== state.text);
   const boardSourceText = isAnimatingContent ? (state.displayedText || state.text) : state.text;
   const boardData = getMathPlaceValueBoardData(boardSourceText) || (isAnimatingContent ? getMathPlaceValueBoardData(state.text) : null);
-  const textOnlyContent = getPaginatedSlideContent(
-    state.text,
-    !state.text,
-    state.previewPageIndex,
-    false
-  );
+  // Use cached layouts for state.text (unchanged during playback) — only
+  // activeContent uses the per-frame displayedText and is always recomputed.
+  const textOnlyContent = getCachedTextOnlyContent(state.text, state.previewPageIndex);
   const predictedAnimatedPageIndex = isAnimatingContent
     ? clamp(
       getStableAnimatedPageIndex(textOnlyContent, state.displayedText),
@@ -12190,12 +12238,7 @@ function drawScene(mouthOpen = 0.12) {
     )
     : clamp(state.previewPageIndex, 0, Math.max(0, Math.max(textOnlyContent.pageCount, state.images.length ? getImagePageCount() : 1) - 1));
   const currentPageHasImages = getStageHasVisibleImagesForPage(predictedAnimatedPageIndex);
-  const fullContent = getPaginatedSlideContent(
-    state.text,
-    !state.text,
-    predictedAnimatedPageIndex,
-    currentPageHasImages
-  );
+  const fullContent = getCachedFullContent(state.text, predictedAnimatedPageIndex, currentPageHasImages);
   const activeContent = isAnimatingContent
     ? getPaginatedSlideContent(
       state.displayedText,
