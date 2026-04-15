@@ -108,3 +108,6 @@ Write-Host "Narration health:    http://127.0.0.1:8424/health"
 Write-Host "Anjali clone health: http://127.0.0.1:8426/health"
 Write-Host "Transcription health: http://127.0.0.1:8428/health"
 Write-Host "Video export health: http://127.0.0.1:8430/health"
+
+Write-Host "Opening browser..."
+Start-Process "http://127.0.0.1:8455/"

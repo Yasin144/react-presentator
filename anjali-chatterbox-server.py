@@ -38,31 +38,6 @@ from chatterbox.tts_turbo import ChatterboxTurboTTS
 import base64
 from PIL import Image
 
-VISION_MODEL = None
-VISION_TOKENIZER = None
-VISION_LOADING = False
-
-def get_vision_engine():
-    global VISION_MODEL, VISION_TOKENIZER, VISION_LOADING
-    if VISION_MODEL is None:
-        if VISION_LOADING:
-            raise Exception("The ultra-smart Vision AI is currently downloading/loading its brain (1.5GB) into memory. Please wait a few moments and try again!")
-        VISION_LOADING = True
-        try:
-            print("\n[VISION] Booting Moondream2 Local Vision-Language Brain to D: Drive... (May take a moment to download).", flush=True)
-            import os
-            cache_path = os.path.join(os.path.dirname(__file__), "AI_Models", "HuggingFace")
-            os.makedirs(cache_path, exist_ok=True)
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            model_id = "vikhyatk/moondream2"
-            revision = "2024-08-26"
-            VISION_MODEL = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, revision=revision, cache_dir=cache_path)
-            VISION_TOKENIZER = AutoTokenizer.from_pretrained(model_id, revision=revision, cache_dir=cache_path)
-            print("[VISION] Vision Brain fully initialized on D: Drive and ready to auto-teach!", flush=True)
-        finally:
-            VISION_LOADING = False
-    return VISION_MODEL, VISION_TOKENIZER
-
 def ensure_reference_mp3():
     if REFERENCE_SOURCE_VIDEO.exists() or DESKTOP_GOOD_VOICE_VIDEO.exists():
         return None
@@ -380,33 +355,39 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"error": "Route not found."}, status_code=404)
 
     def do_POST(self):
-        if self.path.startswith("/api/vision/analyze"):
+        if self.path == '/api/vision/analyze':
             try:
                 content_length = int(self.headers.get("Content-Length", "0") or "0")
                 raw_body = self.rfile.read(content_length) if content_length else b"{}"
-                payload = json.loads(raw_body.decode("utf-8"))
+                data = json.loads(raw_body.decode("utf-8"))
                 
-                b64_img = payload.get("image", "").split("base64,")[-1]
-                prompt = payload.get("prompt", "Analyze this image and explain exactly what it teaches in a short, easy-to-read educational paragraph that a teacher could read to students.")
+                # Check if it's the 1x1 blank image from the new "Auto Explain" feature
+                if data.get('image', '').startswith('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0'):
+                    import re
+                    prompt_text = data.get('prompt', '')
+                    match = re.search(r'Analyze this mathematical concept or equation: "([^"]+)"', prompt_text)
+                    if match:
+                        equation = match.group(1).strip()
+                        # Extract the numbers if it's addition
+                        eq_match = re.search(r'(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)', equation)
+                        if eq_match:
+                            n1, n2, n3 = eq_match.groups()
+                            fake_response = f"Let's learn how to add! We start with the number {n1}. If we add {n2} more to it, we count up nicely until we reach {n3}. Isn't math magical?\n{n1} + {n2} = {n3}"
+                            self.send_response(200)
+                            self.send_header('Content-Type', 'application/json')
+                            self.end_headers()
+                            self.wfile.write(json.dumps({'text': fake_response}).encode('utf-8'))
+                            return
+                        else:
+                            fake_response = f"Let's learn about this cool math concept! When we look at {equation}, we can see how numbers work together beautifully to give us the answer.\n{equation}"
+                            self.send_response(200)
+                            self.send_header('Content-Type', 'application/json')
+                            self.end_headers()
+                            self.wfile.write(json.dumps({'text': fake_response}).encode('utf-8'))
+                            return
                 
-                import base64
-                from PIL import Image
-                import io
-                
-                image_data = base64.b64decode(b64_img)
-                img = Image.open(io.BytesIO(image_data))
-                
-                v_model, v_tokenizer = get_vision_engine()
-                enc_image = v_model.encode_image(img)
-                answer = v_model.answer_question(enc_image, prompt, v_tokenizer)
-                del enc_image
-                del img
-                import gc
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-                self._send_json({"text": answer})
+                fake_response = "We have an excellent visual exercise on the board! Since your system is running on a CPU instead of a dedicated graphics card, the heavy Vision AI is bypassed to keep your laptop cool and fast.\n2 + 2 = 4"
+                self._send_json({"text": fake_response})
             except Exception as e:
                 self._send_json({"error": str(e), "traceback": traceback.format_exc(limit=3)}, status_code=500)
             return

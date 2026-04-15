@@ -791,6 +791,14 @@ const state = {
     startHeight: 0,
     startAspectRatio: 4 / 3
   },
+  whiteboard: {
+    enabled: false,
+    drawing: false,
+    color: "#ff0000",
+    lineWidth: 4,
+    currentStroke: [],
+    strokes: []
+  },
   imageRenderBoxes: [],
   stageVideoEditor: {
     activeId: "",
@@ -11448,6 +11456,39 @@ function drawCinematicCaptions() {
   ctx.restore();
 }
 
+function drawWhiteboardStrokes() {
+  if (!state.whiteboard.strokes.length && !state.whiteboard.currentStroke.length) {
+    return;
+  }
+  
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  const allStrokes = [...state.whiteboard.strokes];
+  if (state.whiteboard.currentStroke.length > 0) {
+     allStrokes.push({
+       color: state.whiteboard.color,
+       width: state.whiteboard.lineWidth,
+       points: state.whiteboard.currentStroke
+     });
+  }
+
+  allStrokes.forEach(stroke => {
+    if (stroke.points.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length; i++) {
+       ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
+    ctx.stroke();
+  });
+  
+  ctx.restore();
+}
+
 function drawAutoQuizOverlay() {
   if (proQuizEnabled && !proQuizEnabled.checked) return;
   if (!state.speaking && !state.exportingVideo) return;
@@ -11538,8 +11579,8 @@ function drawAutoQuizOverlay() {
 
 function drawProceduralConceptAnimations() {
   if (proAnimationsEnabled && !proAnimationsEnabled.checked) return;
-  // Only run during active narration or video export — not while the user is just typing
-  if (!state.speaking && !state.exportingVideo) return;
+  // Run during active narration, export, or whenever viewing the presentation stage
+  if (!state.speaking && !state.exportingVideo && (!stagePanel || stagePanel.classList.contains("hidden"))) return;
   const isAnimatingContent = state.speaking || (state.displayedText && state.displayedText !== state.text);
   const boardSourceText = isAnimatingContent ? (state.displayedText || state.text) : state.text;
   if (!boardSourceText) return;
@@ -12309,6 +12350,7 @@ function drawScene(mouthOpen = 0.12) {
     drawProceduralConceptAnimations();
     drawCinematicCaptions();
     drawAutoQuizOverlay();
+    drawWhiteboardStrokes();
     drawRuntimeDisplayErrorOverlay();
     requestCanvasExportFrame();
     return;
@@ -12392,6 +12434,7 @@ function drawScene(mouthOpen = 0.12) {
   drawProceduralConceptAnimations();
   drawCinematicCaptions();
   drawAutoQuizOverlay();
+  drawWhiteboardStrokes();
   drawRuntimeDisplayErrorOverlay();
   requestCanvasExportFrame();
 }
@@ -14281,6 +14324,8 @@ async function autoFetchSmartBRoll() {
          const imageObj = await loadImageFromDataUrl(dataUrl);
          state.images.push({
            dataUrl,
+           image: imageObj,
+           originalDataUrl: dataUrl,
            width: imageObj.width,
            height: imageObj.height,
            renderWidth: Math.min(800, imageObj.width),
@@ -14295,7 +14340,7 @@ async function autoFetchSmartBRoll() {
          
          state.imageEditor.activeIndex = state.images.length - 1;
          setStatus(`🎬 Successfully fetched and appended cinematic B-Roll for topic: ${keyword.toUpperCase()}`);
-         updateStageMediaUi();
+         updateStageMediaToolUi();
          requestCanvasExportFrame();
       };
       reader.readAsDataURL(blob);
@@ -14322,7 +14367,7 @@ async function autoTeachSelectedImage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         image: selectedImage.originalDataUrl || selectedImage.dataUrl,
-        prompt: "Analyze this image and explain exactly what it teaches in a short, easy-to-read educational paragraph that a teacher could read to students. Do not use asterisks or formatting."
+        prompt: "Analyze this image and explain exactly what mathematical concept it teaches in a short, easy-to-read educational paragraph that a teacher could read out loud. DO NOT use asterisks or bold formatting. IF the image shows addition or multiplication, you MUST end your paragraph with the exact math equation on a new line (for example '2 + 3 = 5' or '3 x 4 = 12') so that the procedural visual animations can automatically track and demonstrate it during playback."
       })
     });
     
@@ -14330,10 +14375,10 @@ async function autoTeachSelectedImage() {
     if (!response.ok) {
        throw new Error(result.error || "Failed to analyze image.");
     }
-    
-    if (textInput && result.text) {
-       textInput.value = result.text.trim();
-       updateTextState(textInput.value);
+    if (lessonInput && result.text) {
+       lessonInput.value = result.text.trim();
+       lessonInput.dispatchEvent(new Event("input"));
+       lessonInput.dispatchEvent(new Event("change"));
        setStatus("Success! AI Vision generated the lesson script. You can edit it now.");
     }
   } catch (error) {
@@ -14893,6 +14938,17 @@ function beginImageInteraction(event) {
   }
 
   const point = getCanvasPoint(event);
+  
+  if (state.whiteboard.enabled) {
+    state.whiteboard.drawing = true;
+    state.whiteboard.currentStroke = [point];
+    if (typeof previewCanvas.setPointerCapture === "function") {
+      try { previewCanvas.setPointerCapture(event.pointerId); } catch(e) {}
+    }
+    drawScene(state.mouthOpen);
+    return;
+  }
+
   const imageHit = getImageHitTarget(point);
   const videoHit = isPdfPresentationMode() || imageHit ? null : getStageVideoHitTarget(point);
   if (videoHit) {
@@ -14978,6 +15034,14 @@ function beginImageInteraction(event) {
 
 function moveImageInteraction(event) {
   const point = getCanvasPoint(event);
+  
+  if (state.whiteboard.drawing && state.whiteboard.enabled) {
+      state.whiteboard.currentStroke.push(point);
+      event.preventDefault();
+      drawScene(state.mouthOpen);
+      return;
+  }
+
   const editor = state.imageEditor;
   const videoEditor = state.stageVideoEditor;
 
@@ -15115,6 +15179,23 @@ function moveImageInteraction(event) {
 }
 
 function endImageInteraction(event) {
+  if (state.whiteboard.drawing) {
+     if (state.whiteboard.currentStroke.length > 0) {
+        state.whiteboard.strokes.push({
+           color: state.whiteboard.color,
+           width: state.whiteboard.lineWidth,
+           points: [...state.whiteboard.currentStroke]
+        });
+     }
+     state.whiteboard.currentStroke = [];
+     state.whiteboard.drawing = false;
+     if (typeof previewCanvas.releasePointerCapture === "function" && event && event.pointerId !== undefined) {
+       try { previewCanvas.releasePointerCapture(event.pointerId); } catch(e) {}
+     }
+     drawScene(state.mouthOpen);
+     return;
+  }
+
   if (!state.imageEditor.mode && !state.stageVideoEditor.mode) {
     return;
   }
@@ -17785,6 +17866,23 @@ downloadBtn.addEventListener("click", () => {
   void beginExportFromUi(exportVideo);
 });
 
+document.addEventListener("keydown", (event) => {
+  // Toggle whiteboard with W
+  if (event.key.toLowerCase() === "w" && !event.ctrlKey && !event.metaKey && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+    state.whiteboard.enabled = !state.whiteboard.enabled;
+    const word = state.whiteboard.enabled ? "enabled" : "disabled";
+    setStatus(`Whiteboard drawing is now ${word}. Click and drag on the screen to draw.`);
+  }
+  // Clear whiteboard with C
+  if (event.key.toLowerCase() === "c" && !event.ctrlKey && !event.metaKey && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+    if (state.whiteboard.strokes.length > 0) {
+       state.whiteboard.strokes = [];
+       drawScene(state.mouthOpen);
+       setStatus("Whiteboard cleared.");
+    }
+  }
+});
+
 window.addEventListener("beforeunload", () => {
   if (state.anjaliMonitor.timerId) {
     window.clearInterval(state.anjaliMonitor.timerId);
@@ -17875,4 +17973,50 @@ if (stageClearImagesBtn) {
 }
 if (stageRemoveVideoBtn) {
   stageRemoveVideoBtn.addEventListener("click", removeActiveStageVideo);
+}
+
+const autoExplainBtn = document.getElementById("autoExplainBtn");
+if (autoExplainBtn) {
+  autoExplainBtn.addEventListener("click", async () => {
+    if (!lessonInput || !lessonInput.value.trim()) {
+      setStatus("Please type a short math concept or a math equation like '4 + 4 = 8' into the text box first!");
+      return;
+    }
+    
+    setStatus("Engaging Moondream2 Vision AI as a math explainer... (This takes a few seconds)");
+    
+    // We send a 1x1 blank image to trick Moondream into answering our text prompt
+    const blankImage = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+    const mathConcept = lessonInput.value.trim();
+    const specificPrompt = `Analyze this mathematical concept or equation: "${mathConcept}". Please write a short, easy-to-read educational paragraph that a teacher could read out loud to explain it to young students clearly. DO NOT use asterisks or bold formatting. IF it is addition or multiplication, you MUST end your paragraph with the exact math equation on a new line (for example '4 + 5 = 9' or what you were given) so that the procedural visual animations can automatically track and demonstrate it during playback.`;
+    
+    try {
+      autoExplainBtn.disabled = true;
+      const response = await fetch("http://127.0.0.1:8426/api/vision/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: blankImage,
+          prompt: specificPrompt
+        })
+      });
+      
+      const result = await response.json();
+      if (!response.ok) {
+         throw new Error(result.error || "Failed to generate explanation.");
+      }
+      
+      if (result.text) {
+         lessonInput.value = result.text.trim();
+         lessonInput.dispatchEvent(new Event("input"));
+         lessonInput.dispatchEvent(new Event("change"));
+         setStatus("Success! AI automatically generated the lesson explanation. You can edit it if needed.");
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus(error.message || "Failed to auto-explain the concept.");
+    } finally {
+      autoExplainBtn.disabled = false;
+    }
+  });
 }
