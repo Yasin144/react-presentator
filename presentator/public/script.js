@@ -9964,15 +9964,14 @@ function isUsingDefaultStageStyle(style) {
 }
 
 function getAnimatedTeachingTextColor(segmentColor, rowText, rowIndex, segmentIndex, characterIndex = 0) {
-  // STRICT BRANDING: Learning Outcomes template forces red headings and black text
-  if (normalizePresentationTemplate(state.presentationTemplate) === PRESENTATION_TEMPLATE_OUTCOMES) {
-      if (rowIndex === 0) return '#cc0000'; // RED heading
-      return '#050709'; // Black normally
-  }
-  
-  // Otherwise, respect user's explicit selection color unconditionally
+  // If the user explicitly highlighted this exact sentence/word with a custom color, ALWAYS respect it!
   if (segmentColor && segmentColor !== "#ffffff") {
       return segmentColor;
+  }
+
+  // If no custom highlight, enforce strict branding defaults
+  if (normalizePresentationTemplate(state.presentationTemplate) === PRESENTATION_TEMPLATE_OUTCOMES) {
+      return '#050709'; // Default to Black body text for second template
   }
   
   return getBaseTextStyle().color || "#ffffff";
@@ -11177,7 +11176,7 @@ function drawInfoKidsLogo() {
   const titleY = 36 + Math.max(0, (80 - titleBlockHeight) / 2);
 
   ctx.save();
-  ctx.fillStyle = "#050709";
+  ctx.fillStyle = "#cc0000"; // Red heading for Learning Outcomes
   ctx.font = `900 ${titleFontSize}px "League Spartan", sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
