@@ -2081,11 +2081,11 @@ function getExportCompletionTailMs() {
 }
 
 function getLessonExportCaptureRate() {
-  return state.stageVideo.element ? 24 : 20;
+  return 60; // Max smooth 60fps
 }
 
 function getPdfExportCaptureRate(renderMode = "context") {
-  return renderMode === "exact" ? 7 : 8;
+  return 60; // Max smooth 60fps
 }
 
 function getExportRenderSpeedMultiplier() {
@@ -13399,7 +13399,7 @@ async function playIntroClipForExport(options = {}) {
         break;
       }
       virtualElapsedMs = performance.now() - exportLoopStartMs;
-      await delay(frameDurationMs);
+      await new Promise(requestAnimationFrame); // Perfect vsync
     }
 
     updatePlaybackProgressUi(1, true);
@@ -13490,7 +13490,7 @@ async function renderNarrationTimelineForExport(durationMs, playbackRate = getLe
     }
 
     virtualElapsedMs = performance.now() - exportLoopStartMs;
-    await delay(frameDurationMs);
+    await new Promise(requestAnimationFrame); // Perfect vsync
   }
 }
 
@@ -13541,7 +13541,7 @@ async function renderPdfTimelineForExport(renderMode = getPdfRenderMode(), optio
       break;
     }
 
-    await delay(frameDurationMs);
+    await new Promise(requestAnimationFrame); // Perfect vsync
   }
 }
 
