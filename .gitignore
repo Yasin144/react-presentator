@@ -41,3 +41,11 @@ voice-reference-anjali-source.mp4
 voice-reference-anjali-test.wav
 
 AI_Models/
+
+node_modules/
+dist/
+dist_offline/
+*.mp4
+*.mp3
+*.wav
+*.webm

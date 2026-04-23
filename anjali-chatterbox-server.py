@@ -352,6 +352,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(ENGINE.get_health())
             return
 
+        if self.path.startswith("/api/proxy/tts"):
+            from urllib.parse import urlparse, parse_qs
+            import urllib.request
+            try:
+                qs = parse_qs(urlparse(self.path).query)
+                tl = qs.get("tl", ["en"])[0]
+                q = qs.get("q", [""])[0]
+                url = f"https://translate.googleapis.com/translate_tts?ie=UTF-8&tl={tl}&client=tw-ob&q={urllib.parse.quote(q)}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req) as resp:
+                    data = resp.read()
+                    if not self._send_headers(status_code=200, content_type="audio/mpeg", content_length=len(data)):
+                        return
+                    self._safe_write(data)
+            except Exception as e:
+                self._send_json({"error": str(e)}, status_code=500)
+            return
+
         self._send_json({"error": "Route not found."}, status_code=404)
 
     def do_POST(self):
@@ -391,11 +409,9 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json({"error": str(e), "traceback": traceback.format_exc(limit=3)}, status_code=500)
             return
-
         if not self.path.startswith("/api/narrate"):
             self._send_json({"error": "Route not found."}, status_code=404)
             return
-
         try:
             content_length = int(self.headers.get("Content-Length", "0") or "0")
             raw_body = self.rfile.read(content_length) if content_length else b"{}"
