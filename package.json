@@ -1,22 +1,40 @@
 {
-  "name": "presentator",
-  "version": "1.0.0",
-  "description": "Presentator Educational Video Studio",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --windows"
-  },
-  "author": "Anjali",
-  "license": "ISC",
-  "build": {
-    "appId": "com.presentator.app",
-    "win": {
-      "target": "nsis"
-    }
-  },
-  "devDependencies": {
-    "electron": "^41.2.1",
-    "electron-builder": "^26.8.1"
-  }
+    "name":  "presentator",
+    "version":  "1.0.0",
+    "description":  "Presentator Educational Video Studio",
+    "main":  "main.cjs",
+    "scripts":  {
+                    "start":  "electron .",
+                    "build":  "electron-builder --windows",
+                    "dev":  "vite",
+                    "build:react":  "vite build",
+                    "preview":  "vite preview"
+                },
+    "author":  "Anjali",
+    "license":  "ISC",
+    "build":  {
+                  "appId":  "com.presentator.app",
+                  "win":  {
+                              "target":  "nsis"
+                          }
+              },
+    "devDependencies":  {
+                            "@vitejs/plugin-react":  "^6.0.1",
+                            "electron-builder":  "^26.8.1",
+                            "@eslint/js":  "^10.0.1",
+                            "eslint-plugin-react-hooks":  "^7.1.1",
+                            "@types/react-dom":  "^19.2.3",
+                            "electron":  "^41.2.1",
+                            "eslint-plugin-react-refresh":  "^0.5.2",
+                            "eslint":  "^10.2.1",
+                            "globals":  "^17.5.0",
+                            "@types/react":  "^19.2.14",
+                            "vite":  "^8.0.10"
+                        },
+    "dependencies":  {
+                         "react":  "^19.2.5",
+                         "react-dom":  "^19.2.5",
+                         "zustand":  "^5.0.12"
+                     },
+    "type":  "module"
 }

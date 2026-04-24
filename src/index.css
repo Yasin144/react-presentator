@@ -2561,3 +2561,9 @@ button:focus-visible,
     flex-basis: 100%;
   }
 }
+
+/* Subject Mode Isolation */
+body[data-subject="english"] .maths-translator-card,
+body[data-subject="english"] .maths-helper-card {
+  display: none !important;
+}

@@ -40,6 +40,7 @@ const saveOutcomesTitleBtn = document.getElementById("saveOutcomesTitleBtn");
 const outcomesTitleStatus = document.getElementById("outcomesTitleStatus");
 const inputPanel = document.getElementById("inputPanel");
 const stagePanel = document.getElementById("stagePanel");
+const subjectSelect = document.getElementById("subjectSelect");
 const themeSelect = document.getElementById("themeSelect");
 const themeToggle = document.getElementById("themeToggle");
 const themeModeLabel = document.getElementById("themeModeLabel");
@@ -337,14 +338,20 @@ const VERY_LONG_EXPORT_THRESHOLD_MS = 15 * 60 * 1000;
 const MUX_CHUNK_UPLOAD_THRESHOLD_BYTES = 96 * 1024 * 1024;
 const MUX_CHUNK_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
 const STRICT_INTER_WORD_PAUSE_MS = 400;
-const STRICT_SENTENCE_PAUSE_MS = 800;
+const STRICT_SENTENCE_PAUSE_MS = 2000;
 const STRICT_SOFT_SENTENCE_PAUSE_MS = 520;
-const STRICT_HEADING_PAUSE_MS = 1100;
+const STRICT_HEADING_PAUSE_MS = 2000;
 const STRICT_SCENE_END_BUFFER_MS = 1500;
 const STRICT_AUTOPLAY_RECOVERY_MS = 1000;
 const STRICT_VOICE_VOLUME = 0.85;
 const STRICT_BACKGROUND_MUSIC_VOLUME = 0.2;
-const LIVE_SCENE_RENDER_FPS = 24;
+
+// Export limits
+const EXPORT_MAX_VIDEO_BITRATE = 120000000; // 120 Mbps
+const EXPORT_DEFAULT_VIDEO_BITRATE = 80000000; // 80 Mbps
+
+// Rendering
+const LIVE_SCENE_RENDER_FPS = 60; // Butter-smooth 60fps live rendering
 const EXPORT_SCENE_RENDER_FPS = 12;
 const SCENE_RENDER_MOUTH_DELTA = 0.035;
 const NARRATION_CHUNK_JOIN_GAP_MS = 0;
@@ -610,6 +617,7 @@ let pdfFaceDetector = null;
 let pdfFaceFilteringUnavailable = false;
 
 const state = {
+  subjectMode: "maths",
   narrationServerUrl: "http://127.0.0.1:8424",
   narrationServerReady: false,
   anjaliCloneServerUrl: "http://127.0.0.1:8426",
@@ -2544,26 +2552,68 @@ function expandTeachingTermsForSpeech(text = "") {
 }
 
 function verbalizeMathForSpeech(text) {
-  return expandTeachingTermsForSpeech(text)
+  const isEnglishMode = state.subjectMode === "english";
+
+  let mathText = expandTeachingTermsForSpeech(text);
+
+  if (isEnglishMode) {
+    return mathText
+      .replace(/=/g, " ")
+      .replace(/\+/g, " ")
+      .replace(/(?<!\d)-(?=\d)/g, " ")
+      .replace(/(?<=\d)\s*-\s*(?=\d)/g, " ")
+      .replace(/\s+-\s+/g, " ")
+      .replace(/\*/g, " ")
+      .replace(/\u00D7/g, " ")
+      .replace(/\u00F7/g, " ")
+      .replace(/\//g, " ")
+      .replace(/</g, " ")
+      .replace(/>/g, " ")
+      .replace(/\u2264/g, " ")
+      .replace(/\u2265/g, " ")
+      .replace(/\u2260/g, " ")
+      .replace(/%/g, " ")
+      .replace(/\^/g, " ")
+      .replace(/\u221A/g, " ")
+      .replace(/:/g, " ")
+      .replace(/\(/g, " ")
+      .replace(/\)/g, " ")
+      .replace(/\[/g, " ")
+      .replace(/\]/g, " ")
+      .replace(/\{/g, " ")
+      .replace(/\}/g, " ")
+      .replace(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  return mathText
     .replace(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, verbalizeFractionToken)
-    .replace(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/g, "$1 ratio $2")
+    .replace(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/g, "$1 is to $2")
     .replace(/\*/g, " multiplied by ")
     .replace(/(\d+(?:,\d+)*(?:\.\d+)?)/g, (match) => convertDecimalNumberToWords(match))
-    .replace(/×/g, " multiplied by ")
-    .replace(/÷/g, " divided by ")
+    .replace(/\u00D7/g, " multiplied by ")
+    .replace(/\u00F7/g, " divided by ")
     .replace(/\//g, " divided by ")
     .replace(/\+/g, " plus ")
     .replace(/(?<!\d)-(?=\d)/g, " minus ")
     .replace(/(?<=\d)\s*-\s*(?=\d)/g, " minus ")
     .replace(/\s+-\s+/g, " minus ")
-    .replace(/=/g, " equals ")
-    .replace(/≤/g, " less than or equal to ")
-    .replace(/≥/g, " greater than or equal to ")
-    .replace(/≠/g, " not equal to ")
+    .replace(/=/g, " equal to ")
+    .replace(/\u2264/g, " less than or equal to ")
+    .replace(/\u2265/g, " greater than or equal to ")
+    .replace(/\u2260/g, " not equal to ")
     .replace(/</g, " less than ")
     .replace(/>/g, " greater than ")
     .replace(/\^/g, " to the power of ")
     .replace(/%/g, " percent ")
+    .replace(/\u221A/g, " square root of ")
+    .replace(/\(/g, " open bracket ")
+    .replace(/\)/g, " close bracket ")
+    .replace(/\[/g, " open square bracket ")
+    .replace(/\]/g, " close square bracket ")
+    .replace(/\{/g, " open curly bracket ")
+    .replace(/\}/g, " close curly bracket ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -2627,20 +2677,8 @@ function splitNarrationTextIntoChunks(narrationText, maxChunkLength = NARRATION_
     return [];
   }
 
-  if (safeNarrationText.length <= maxChunkLength) {
-    return [safeNarrationText];
-  }
-
   const sentenceParts = safeNarrationText.split(/(?<=[.!?;:])\s+/).filter(Boolean);
   const chunks = [];
-  let currentChunk = "";
-
-  const pushCurrentChunk = () => {
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
-    }
-    currentChunk = "";
-  };
 
   sentenceParts.forEach((sentence) => {
     const safeSentence = sentence.trim();
@@ -2649,7 +2687,6 @@ function splitNarrationTextIntoChunks(narrationText, maxChunkLength = NARRATION_
     }
 
     if (safeSentence.length > maxChunkLength) {
-      pushCurrentChunk();
       const words = safeSentence.split(/\s+/).filter(Boolean);
       let segment = "";
 
@@ -2669,16 +2706,9 @@ function splitNarrationTextIntoChunks(narrationText, maxChunkLength = NARRATION_
       return;
     }
 
-    const candidate = currentChunk ? `${currentChunk} ${safeSentence}` : safeSentence;
-    if (candidate.length > maxChunkLength && currentChunk) {
-      pushCurrentChunk();
-      currentChunk = safeSentence;
-    } else {
-      currentChunk = candidate;
-    }
+    chunks.push(safeSentence);
   });
 
-  pushCurrentChunk();
   return chunks.length ? chunks : [safeNarrationText];
 }
 
@@ -3260,11 +3290,18 @@ function buildSpeechSyncProfileFromChunkDurations(text = "", narrationChunks = [
   const safeChunks = Array.isArray(narrationChunks)
     ? narrationChunks.map((chunk) => String(chunk || "").trim()).filter(Boolean)
     : [];
-  const joinGapMs = Math.max(0, Math.round(Number(NARRATION_CHUNK_JOIN_GAP_MS) || 0));
+  
   const safeDurations = Array.isArray(chunkDurationsMs)
     ? chunkDurationsMs.map((value, index, source) => {
       const baseDurationMs = Math.max(1, Math.round(Number(value) || 0));
-      return baseDurationMs + (index < (source.length - 1) ? joinGapMs : 0);
+      if (index >= source.length - 1) return baseDurationMs;
+      
+      let baseGap = Math.max(0, Math.round(Number(NARRATION_CHUNK_JOIN_GAP_MS) || 0));
+      const chunkText = safeChunks[index];
+      if (chunkText && (/\n/.test(chunkText) || /[.!?]["')\]]*\s*$/i.test(chunkText))) {
+        baseGap += Math.max(0, Math.round(Number(STRICT_SENTENCE_PAUSE_MS) || 0));
+      }
+      return baseDurationMs + baseGap;
     }).filter((value) => value > 0)
     : [];
 
@@ -7239,7 +7276,7 @@ function getProjectFolderPath() {
       .replace(/\\index\.html$/i, "");
   }
 
-  return "C:\\Users\\patan\\Documents\\New project";
+  return "d:\\presentator";
 }
 
 function getStartAllCommand() {
@@ -7608,7 +7645,7 @@ async function ensureVideoExportServer() {
   return state.videoExportServerReady;
 }
 
-async function combineNarrationBlobs(blobs = []) {
+async function combineNarrationBlobs(blobs = [], chunks = []) {
   const safeBlobs = blobs.filter((blob) => blob && blob.size);
   if (!safeBlobs.length) {
     throw new Error("Narration generation returned no audio data.");
@@ -7636,9 +7673,26 @@ async function combineNarrationBlobs(blobs = []) {
 
     const sampleRate = decodedBuffers.reduce((best, buffer) => Math.max(best, buffer.sampleRate || 24000), 24000);
     const channelCount = decodedBuffers.reduce((best, buffer) => Math.max(best, buffer.numberOfChannels || 1), 1);
-    const joinGapSeconds = Math.max(0, NARRATION_CHUNK_JOIN_GAP_MS / 1000);
+    
+    // Compute gap array
+    const gapSeconds = decodedBuffers.map((_, index) => {
+      if (index >= decodedBuffers.length - 1) return 0;
+      
+      let baseGap = Math.max(0, NARRATION_CHUNK_JOIN_GAP_MS / 1000);
+      
+      // If we have chunks and this chunk ends a sentence
+      if (chunks && chunks[index]) {
+        const chunkText = chunks[index];
+        if (/\n/.test(chunkText) || /[.!?]["')\]]*\s*$/i.test(chunkText)) {
+          // Strictly add the 2-second pause!
+          baseGap += (STRICT_SENTENCE_PAUSE_MS / 1000);
+        }
+      }
+      return baseGap;
+    });
+
     const totalDuration = decodedBuffers.reduce((sum, buffer, index) => (
-      sum + buffer.duration + (index < (decodedBuffers.length - 1) ? joinGapSeconds : 0)
+      sum + buffer.duration + gapSeconds[index]
     ), 0);
     const totalFrames = Math.max(1, Math.ceil(totalDuration * sampleRate) + 1);
     const offlineContext = new OfflineAudioContextConstructor(channelCount, totalFrames, sampleRate);
@@ -7666,7 +7720,7 @@ async function combineNarrationBlobs(blobs = []) {
       gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
 
       source.start(cursorTime);
-      cursorTime += buffer.duration + (index < (decodedBuffers.length - 1) ? joinGapSeconds : 0);
+      cursorTime += buffer.duration + gapSeconds[index];
     });
 
     const renderedBuffer = await offlineContext.startRendering();
@@ -9023,7 +9077,7 @@ async function requestNarrationBlob(text, voice = state.preferredNarrationVoice 
   try {
     if (chunkedText.length === 1) {
       const singleChunkResult = await generateNarrationChunkWithFallback(chunkedText[0], voice, options);
-      const blob = await combineNarrationBlobs(singleChunkResult.blobs);
+      const blob = await combineNarrationBlobs(singleChunkResult.blobs, singleChunkResult.chunks);
       const totalDurationMs = singleChunkResult.durations.reduce((sum, value) => sum + value, 0);
       const syncProfile = buildSpeechSyncProfileFromChunkDurations(text, singleChunkResult.chunks, singleChunkResult.durations);
       if (typeof options.onSyncProfile === "function" && syncProfile) {
@@ -9080,7 +9134,7 @@ async function requestNarrationBlob(text, voice = state.preferredNarrationVoice 
       });
     }
 
-    const combinedBlob = await combineNarrationBlobs(blobs);
+    const combinedBlob = await combineNarrationBlobs(blobs, resolvedChunks);
     const syncProfile = buildSpeechSyncProfileFromChunkDurations(text, resolvedChunks, chunkDurationsMs);
     if (typeof options.onSyncProfile === "function" && syncProfile) {
       options.onSyncProfile(syncProfile);
@@ -15624,15 +15678,10 @@ function startNarrationLoop(audioElement) {
       ? (audioMouth ?? getFallbackMouth(syncFrame.speechElapsedMs))
       : 0.12;
     state.mouthOpen = nextMouth;
-    if (shouldRenderAnimatedSceneFrame(nowMs, {
-      force: previousText !== state.displayedText || progress >= 0.995,
-      lastRenderAt,
-      mouthDelta: nextMouth - lastRenderedMouth
-    })) {
-      drawScene(state.mouthOpen);
-      lastRenderAt = nowMs;
-      lastRenderedMouth = state.mouthOpen;
-    }
+    // Always draw every frame during speaking for butter-smooth float-precision text fade-in
+    drawScene(state.mouthOpen);
+    lastRenderAt = nowMs;
+    lastRenderedMouth = state.mouthOpen;
 
     if (!audioElement.ended) {
       state.animationFrame = requestAnimationFrame(tick);
@@ -17546,6 +17595,13 @@ if (themeSelect) {
   themeSelect.addEventListener("change", (event) => {
     applyTheme(event.target.value);
   });
+}
+if (subjectSelect) {
+  subjectSelect.addEventListener("change", (event) => {
+    state.subjectMode = event.target.value;
+    document.body.setAttribute("data-subject", state.subjectMode);
+  });
+  document.body.setAttribute("data-subject", state.subjectMode);
 }
 if (themeToggle) {
   themeToggle.addEventListener("change", (event) => {

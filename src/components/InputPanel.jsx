@@ -21,6 +21,10 @@ function InputPanel() {
             <p className="hero-stage-note">Classroom board style</p>
             <div className="hero-stage-actions">
               <button id="resetInputsBtn" className="primary-btn reset-btn ghost-btn" type="button">Reset</button>
+              <select id="subjectSelect" className="theme-select text-style-select" aria-label="Choose subject" style={{ marginRight: "8px" }}>
+                <option value="maths" selected>Maths Mode</option>
+                <option value="english">English Mode</option>
+              </select>
               <button id="showScreenBtn" className="primary-btn input-show-screen-btn hero-show-screen-btn"
                 type="button">Show Screen</button>
               <label className="theme-toggle theme-toggle-standalone" htmlFor="themeToggle" title="Toggle day and dark theme">
