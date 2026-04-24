@@ -219,7 +219,27 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Compact controls inside the hero topbar */
+.hero-stage-actions #subjectSelect {
+  width: auto;
+  min-width: 90px;
+  min-height: 36px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-right: 0 !important;
+}
+
+.hero-stage-actions #resetInputsBtn {
+  min-height: 36px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  border-radius: 12px;
 }
 
 .hero-stage-note {
@@ -2598,8 +2618,31 @@ button:focus-visible,
   }
 }
 
-/* Subject Mode Isolation */
+/* Subject Mode Isolation — English mode: hide maths-only content */
 body[data-subject="english"] .maths-translator-card,
-body[data-subject="english"] .maths-helper-card {
+body[data-subject="english"] .maths-helper-card,
+body[data-subject="english"] .place-value-card {
   display: none !important;
 }
+
+body[data-subject="english"] .maths-label {
+  display: none !important;
+}
+
+body[data-subject="english"] .english-label {
+  display: block !important;
+}
+
+/* Subject Mode Isolation — Maths mode: hide english-only content */
+body[data-subject="maths"] .english-translator-card {
+  display: none !important;
+}
+
+body[data-subject="maths"] .english-label {
+  display: none !important;
+}
+
+body[data-subject="maths"] .maths-label {
+  display: block !important;
+}
+

@@ -2054,6 +2054,9 @@ function getSupportedVideoMimeType(includeAudioCodecs = false) {
 
 function createExportMediaRecorder(stream, videoBitsPerSecond) {
   const hasAudioTrack = Boolean(stream?.getAudioTracks?.().length);
+  // Bitrate clamped to 20 Mbps max — broadcast quality, stable in browser memory.
+  // 120 Mbps was crashing the browser by exhausting RAM buffering MediaRecorder chunks.
+  const safeBitrate = Math.min(Math.max(videoBitsPerSecond || 8000000, 8000000), 20000000);
   const candidateMimeTypes = hasAudioTrack
     ? [
       getSupportedVideoMimeType(true),
@@ -2067,17 +2070,10 @@ function createExportMediaRecorder(stream, videoBitsPerSecond) {
 
   let lastError = null;
   for (const mimeType of candidateMimeTypes.filter(Boolean)) {
-    // ULTRA MAXIMUM QUALITY BITRATE (120 Mbps) to ensure pixel-perfect export of Anjali
-    videoBitsPerSecond = Math.max(videoBitsPerSecond, 120000000); 
-
-    const options = {
-      mimeType,
-      videoBitsPerSecond
-    };
+    const options = { mimeType, videoBitsPerSecond: safeBitrate };
     if (hasAudioTrack) {
       options.audioBitsPerSecond = 192000;
     }
-
     try {
       return new MediaRecorder(stream, options);
     } catch (error) {
@@ -2086,11 +2082,8 @@ function createExportMediaRecorder(stream, videoBitsPerSecond) {
     }
   }
 
-  if (lastError) {
-    throw lastError;
-  }
-
-  return new MediaRecorder(stream, { videoBitsPerSecond });
+  if (lastError) { throw lastError; }
+  return new MediaRecorder(stream, { videoBitsPerSecond: safeBitrate });
 }
 
 function delay(ms) {

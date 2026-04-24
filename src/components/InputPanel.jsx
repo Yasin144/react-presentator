@@ -21,8 +21,8 @@ function InputPanel() {
             <div className="hero-stage-actions">
               <button id="resetInputsBtn" className="primary-btn reset-btn ghost-btn" type="button">Reset</button>
               <select id="subjectSelect" className="theme-select text-style-select" aria-label="Choose subject" style={{ marginRight: "8px" }}>
-                <option value="maths" selected>Maths Mode</option>
-                <option value="english">English Mode</option>
+                <option value="maths" selected>Maths</option>
+                <option value="english">English</option>
               </select>
               <button id="showScreenBtn" className="primary-btn input-show-screen-btn hero-show-screen-btn"
                 type="button">Show Screen</button>
@@ -228,7 +228,7 @@ plz open ur books!"></textarea>
             </div>
             <p className="upload-copy" id="englishTranslatorStatus">English translator is ready. Paste shorthand or informal text to formalize it.</p>
           </div>
-          <div className="tool-card">
+          <div className="tool-card place-value-card">
             <div className="tool-card-head">
               <span className="module-icon">TAB</span>
               <p className="tool-card-title">Place Value Table Builder</p>
