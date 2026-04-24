@@ -353,6 +353,7 @@ const STRICT_AUTOPLAY_RECOVERY_MS = 1000;
 const STRICT_VOICE_VOLUME = 0.85;
 const STRICT_BACKGROUND_MUSIC_VOLUME = 0.2;
 const LIVE_SCENE_RENDER_FPS = 24;
+const IDLE_SCENE_RENDER_FPS = 8;  // Throttle when not speaking/exporting to reduce CPU/GPU heat
 const EXPORT_SCENE_RENDER_FPS = 12;
 const SCENE_RENDER_MOUTH_DELTA = 0.035;
 const NARRATION_CHUNK_JOIN_GAP_MS = 2000;
@@ -5059,7 +5060,13 @@ function getVoiceSpecificPreviewRate(voicePreference, playbackRate = getLessonPl
 }
 
 function getSceneRenderIntervalMs() {
-  const targetFps = state.exportingVideo ? EXPORT_SCENE_RENDER_FPS : LIVE_SCENE_RENDER_FPS;
+  // When exporting, use export rate. When actively speaking/animating, use live rate.
+  // When idle (nothing happening), throttle to IDLE rate to reduce CPU/GPU heat.
+  if (state.exportingVideo) {
+    return 1000 / Math.max(1, EXPORT_SCENE_RENDER_FPS);
+  }
+  const isActive = state.speaking || state.playback?.active || state.pdf?.playing;
+  const targetFps = isActive ? LIVE_SCENE_RENDER_FPS : IDLE_SCENE_RENDER_FPS;
   return 1000 / Math.max(1, targetFps);
 }
 
